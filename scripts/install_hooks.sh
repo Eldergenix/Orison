@@ -9,7 +9,7 @@ set -euo pipefail
 #
 # After install, every `git commit` runs `.githooks/pre-commit` and every
 # `git push` runs `.githooks/pre-push`. Both invoke `scripts/validate_all.py`
-# at the appropriate gate level (see docs/QUALITY_GATES.md and docs/CI.md).
+# at the appropriate gate level (see CONTRIBUTING.md).
 #
 # Usage:
 #   ./scripts/install_hooks.sh

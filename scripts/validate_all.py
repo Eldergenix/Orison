@@ -25,13 +25,11 @@ WARNINGS: list[str] = []
 
 REQUIRED_FILES = [
     "README.md",
-    "AGENTS.md",
-    "MEMORY.md",
-    "TASKS.md",
-    "GOAL.md",
     "CHANGELOG.md",
-    "VALIDATION.md",
-    "ORISON_AGENT_DEVELOPMENT_HANDOFF.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "BENCHMARKS.md",
+    "LICENSE",
     "Cargo.toml",
     "rust-toolchain.toml",
     "ori.toml",
@@ -52,14 +50,11 @@ REQUIRED_DIRS = [
     "docs/language",
     "docs/compiler",
     "docs/frameworks",
-    "docs/security",
     "docs/stdlib",
-    "docs/roadmap",
     "schemas",
     "examples",
     "tests/golden",
     "scripts",
-    "prompts",
 ]
 
 SCHEMA_MAP = {
@@ -125,17 +120,11 @@ def check_required_layout() -> None:
 
 def check_markdown_contracts() -> None:
     required_headings = {
-        "ORISON_AGENT_DEVELOPMENT_HANDOFF.md": [
-            "# Orison Agent Development Handoff",
-            "## Current repository state",
-            "## End-to-end remaining work",
-            "## Required quality gates",
-            "## Test and validation matrix",
-            "## Agent implementation playbook",
-        ],
-        "AGENTS.md": ["#"],
-        "TASKS.md": ["#"],
-        "MEMORY.md": ["#"],
+        "README.md": ["#"],
+        "CHANGELOG.md": ["#"],
+        "CONTRIBUTING.md": ["#"],
+        "SECURITY.md": ["#"],
+        "BENCHMARKS.md": ["#"],
     }
     for file_name, headings in required_headings.items():
         path = ROOT / file_name

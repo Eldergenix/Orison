@@ -83,7 +83,7 @@ A symbol card is the smallest useful context unit for an agent.
 - omit full function bodies unless requested;
 - report estimated budget usage.
 
-The current scaffold uses a simple source-order budget. Replacing that with dependency-aware packing is tracked in `TASKS.md`.
+The current scaffold uses a simple source-order budget. Dependency-aware packing is on the roadmap (see `docs/ROADMAP.md`).
 
 ## Agent cost metrics
 

@@ -1,9 +1,7 @@
 # Orison Roadmap
 
 This roadmap is the *delta* between the current bootstrap and a production
-language. The authoritative milestone list lives in
-`ORISON_AGENT_DEVELOPMENT_HANDOFF.md`; this document tracks what is left
-after waves 1–4 of the multi-agent build-out.
+language. It tracks what is left after the bootstrap drop.
 
 ## Currently shipping (waves 1–4)
 
@@ -161,6 +159,5 @@ the work between alpha and production. None of it is hidden; the
 contracts shipping today are designed to remain stable across those
 implementations.
 
-Future agents should consult this roadmap alongside
-`ORISON_AGENT_DEVELOPMENT_HANDOFF.md` before promising any feature
-beyond what is listed in "Currently shipping".
+Future contributors should consult this roadmap before promising any
+feature beyond what is listed in "Currently shipping".

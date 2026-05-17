@@ -39,9 +39,8 @@
 ##   make uninstall-hooks  Unwire .githooks (resets core.hooksPath to default).
 ##   make help             Print this help block.
 ##
-## See: docs/CI.md, docs/CONTRIBUTING.md, docs/QUALITY_GATES.md,
-##      ORISON_AGENT_DEVELOPMENT_HANDOFF.md (section "Required command loop"),
-##      BENCHMARKS.md, AGENTS.md.
+## See: CONTRIBUTING.md, BENCHMARKS.md, SECURITY.md, docs/ROADMAP.md,
+##      docs/language/REFERENCE.md.
 
 .PHONY: help \
         check test fmt fmt-check clippy doctor \
@@ -126,9 +125,9 @@ migrate-plan:
 	cargo run -p ori -- migrate --from 0 --to 1 --dry-run --json examples/fullstack
 
 # Placeholder. The database schema-shape gate is gated on the database
-# subsystem (see ORISON_AGENT_DEVELOPMENT_HANDOFF.md "Database"). Until then,
-# this target prints a no-op message and exits 0 so CI can call it
-# unconditionally. When the gate exists, replace the body with the real call.
+# subsystem (see docs/ROADMAP.md). Until then, this target prints a
+# no-op message and exits 0 so CI can call it unconditionally. When the
+# gate exists, replace the body with the real call.
 db-check:
 	@echo "db-check: not yet implemented; gated on database subsystem milestone"
 

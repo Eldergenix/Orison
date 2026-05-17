@@ -63,7 +63,7 @@ nine new subcommands.
   `schemas/preprocess.schema.json`, CLI `ori preprocess`.
 - [x] Adversarial code review pass: a dedicated agent applied the
   "What would a senior, experienced, perfectionist dev reject?" gate to
-  every `crates/*/src/**/*.rs` file. (See `REJECTIONS_REPORT.md` for
+  every `crates/*/src/**/*.rs` file. (See `(removed: REJECTIONS_REPORT.md)` for
   the issue/fix list once the agent finalises; in-flight edits added
   doc comments and tightened constants across `ori-agent`, `ori-pkg`,
   and `ori-compiler/src/bench.rs`.)
@@ -75,8 +75,8 @@ nine new subcommands.
   UI) and `examples/feed_aggregator/` (HTTP + queue + periodic worker)
   bringing the example count to 6 first-party demos.
 - [x] Documentation: `docs/ROADMAP.md` (delta to production-grade),
-  `docs/SECURITY_MODEL.md` (threat model + capability lifecycle),
-  `RELEASE_NOTES_v0_2_0.md` (alpha release announcement).
+  `(removed: SECURITY_MODEL.md)` (threat model + capability lifecycle),
+  `(removed: RELEASE_NOTES_v0_2_0.md)` (alpha release announcement).
 - [x] Flake fix in `crates/ori-pkg/tests/resolver_cycle.rs`:
   unique temp dir per test invocation (`pid + nanos` namespacing).
 
@@ -139,7 +139,7 @@ scaffolding now ship.
   `gate-pre-commit`, `gate-full`, `release-build`, `bench`, `sbom`,
   `audit`, `provenance-check`, `lsp-stdio`, `docs-human`, `docs-agent`,
   `migrate-plan`, `db-check`, `uninstall-hooks`, and a `make help`
-  default target. New developer docs `docs/CI.md` + `docs/CONTRIBUTING.md`,
+  default target. New developer docs `(removed: CI.md)` + `(removed: CONTRIBUTING.md)`,
   plus `.github/PULL_REQUEST_TEMPLATE.md` and
   `.github/ISSUE_TEMPLATE/{bug_report,feature_request}.md`. New
   `scripts/uninstall_hooks.sh` symmetric counterpart.
@@ -148,8 +148,8 @@ scaffolding now ship.
   prune route + variant payloads). All four example apps (`demo_store`,
   `todo_app`, `blog`, `chat`) parse clean and round-trip every public
   contract.
-- [x] Documentation: `docs/INTEGRATION_REPORT.md` (workspace-wide
-  summary), `docs/DEMO_WALKTHROUGH.md` (20-step demo storefront tour),
+- [x] Documentation: `(removed: INTEGRATION_REPORT.md)` (workspace-wide
+  summary), `(removed: DEMO_WALKTHROUGH.md)` (20-step demo storefront tour),
   `docs/language/REFERENCE.md` (bootstrap-recognised subset reference).
 - [x] Fixed flaky test in `crates/ori-pkg/tests/audit_capability_diff.rs`
   by namespacing the scratch directory with `pid + nanos`.
@@ -225,7 +225,7 @@ documentation generator + edition migration tool shipping.
 - [x] Architectural decisions D015 (apply engine is single-file) and
   D016 (tests may use `assert!(false, ...)` with
   `#[allow(clippy::assertions_on_constants)]` since panic is forbidden)
-  added to `MEMORY.md`.
+  added to `(removed: MEMORY.md)`.
 
 ## 2026-05-16 — End-to-end build-out wave (wave 1)
 
@@ -328,9 +328,9 @@ scoped. Downstream agents must update these bullets as work lands — do not pro
 
 ### Demo storefront
 
-- [x] `examples/demo_store/` build-out: `README.md`, `GOAL.md`, `ori.toml`,
+- [x] `examples/demo_store/` build-out: `README.md`, `(removed: GOAL.md)`, `ori.toml`,
   full `src/`, `tests/`, and `contracts/` per
-  `ORISON_DEMO_APPLICATION_GUIDE.md` Stage 1 acceptance commands.
+  `(removed: ORISON_DEMO_APPLICATION_GUIDE.md)` Stage 1 acceptance commands.
   `agent_patch_add_product_search.json` dry-runs through the apply engine
   with the documented 2-of-3 partial result.
 
@@ -372,9 +372,9 @@ follow-up for `SCHEMA_MAP` in `scripts/validate_all.py`.
 
 ### Documentation
 
-- [x] Added `docs/ARCHITECTURE_OVERVIEW.md` (crate-level map and pipeline diagram).
-- [x] Added `docs/QUALITY_GATES.md` (validation pyramid quick reference).
-- [x] Added `docs/examples/DEMO_APPLICATION.md` (stage-by-stage acceptance commands).
+- [x] Added `(removed: ARCHITECTURE_OVERVIEW.md)` (crate-level map and pipeline diagram).
+- [x] Added `(removed: QUALITY_GATES.md)` (validation pyramid quick reference).
+- [x] Added `(removed: DEMO_APPLICATION.md)` (stage-by-stage acceptance commands).
 - [x] `README.md` gained a "What's actually implemented" honest scope matrix and a
   validated Quick start block.
 
@@ -382,7 +382,7 @@ follow-up for `SCHEMA_MAP` in `scripts/validate_all.py`.
 
 ### Added
 
-- Added `ORISON_AGENT_DEVELOPMENT_HANDOFF.md` as the authoritative continuation file for future AI agents and maintainers.
+- Added `(removed: ORISON_AGENT_DEVELOPMENT_HANDOFF.md)` as the authoritative continuation file for future AI agents and maintainers.
 - Added canonical repository validation gate at `scripts/validate_all.py`.
 - Added installable Git hooks in `.githooks/pre-commit` and `.githooks/pre-push`.
 - Added `scripts/install_hooks.sh` for hook installation.
