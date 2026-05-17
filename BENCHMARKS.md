@@ -10,26 +10,102 @@ matches that schema. Raw measurements live in `BENCHMARKS.results.json`.
 
 ---
 
-## 1. TL;DR (Apple Silicon, n=100)
+## 1. TL;DR (Apple Silicon, n=100, 40 metrics across 32 suites)
 
 Most recent run on `aarch64-apple-darwin`, `rustc 1.92`, release build:
 
-| Suite                              | mean      | p50       | p95       | min       | max        |
-|------------------------------------|----------:|----------:|----------:|----------:|-----------:|
-| `cold_check_latency`               | ~4.0 µs   | ~2.2 µs   | ~6.4 µs   | ~2.0 µs   | ~49.7 µs   |
-| `warm_check_latency`               | ~24.1 µs  | ~20.2 µs  | ~46.5 µs  | ~19.5 µs  | ~77.1 µs   |
-| `cst_parse_latency`                | ~28.2 µs  | ~26.0 µs  | ~37.1 µs  | ~25.4 µs  | ~96.6 µs   |
-| `agent_map_token_density` (wall)   | ~29.1 µs  | ~19.7 µs  | ~75.1 µs  | ~19.0 µs  | ~107.5 µs  |
-| `patch_validation_latency`         | ~1.7 µs   | ~1.5 µs   | ~1.6 µs   | ~0.6 µs   | ~18.2 µs   |
-| `patch_apply_latency` (dry-run)    | ~11.2 µs  | ~9.8 µs   | ~21.3 µs  | ~9.5 µs   | ~55.5 µs   |
-| `formatter_throughput`             | ~1.9 µs   | ~1.3 µs   | ~1.8 µs   | ~1.1 µs   | ~55.5 µs   |
-| `capsule_generation_latency`       | ~31.5 µs  | ~23.8 µs  | ~95.5 µs  | ~23.3 µs  | ~134.5 µs  |
+### Core edit-check-repair loop
 
-**Headline.** The edit-check-repair loop budget is dominated by the
-parser (~28 µs). Patch validation is sub-microsecond. The whole compile
-+ emit-capsule + budget-pack-symbol-map round-trip on a typical
-storefront API file fits in well under 100 µs at p95 on commodity laptop
-silicon.
+| Suite                              | mean      | p50       | p95       |
+|------------------------------------|----------:|----------:|----------:|
+| `cold_check_latency`               | ~4.8 µs   | ~4.4 µs   | ~14.7 µs  |
+| `warm_check_latency`               | ~34.6 µs  | ~21.6 µs  | ~77.9 µs  |
+| `cst_parse_latency`                | ~48.8 µs  | ~35.6 µs  | ~110.7 µs |
+| `agent_map_token_density` (wall)   | ~25.7 µs  | ~19.3 µs  | ~48.3 µs  |
+| `patch_validation_latency`         | ~1.6 µs   | ~1.5 µs   | ~1.8 µs   |
+| `patch_apply_latency` (dry-run)    | ~22.7 µs  | ~20.2 µs  | ~68.0 µs  |
+| `formatter_throughput`             | ~2.2 µs   | ~1.2 µs   | ~4.1 µs   |
+| `capsule_generation_latency`       | ~44.4 µs  | ~31.4 µs  | ~139.2 µs |
+
+### Type system, effects, borrow
+
+| Suite                                 | mean      | p50       | p95       |
+|---------------------------------------|----------:|----------:|----------:|
+| `type_check_signatures_latency`       | ~46.6 µs  | ~36.1 µs  | ~129.0 µs |
+| `exhaustive_match_latency`            | ~90.5 µs  | ~74.5 µs  | ~191.6 µs |
+| `effect_propagation_fixpoint_latency` | ~93.7 µs  | ~102.5 µs | ~171.1 µs |
+| `capability_manifest_latency`         | ~62.1 µs  | ~21.2 µs  | ~176.3 µs |
+| `borrow_check_module_latency`         | ~42.6 µs  | ~21.0 µs  | ~227.3 µs |
+
+### Lowering + codegen
+
+| Suite                                 | mean      | p50       | p95       |
+|---------------------------------------|----------:|----------:|----------:|
+| `hir_lower_medium_ns`                 | ~34.3 µs  | ~21.4 µs  | ~97.0 µs  |
+| `mir_lower_medium_ns`                 | ~31.8 µs  | ~21.9 µs  | ~58.3 µs  |
+| `wasm_minimal_ns`                     | **~0.02 µs** | ~0.04 µs | ~0.04 µs |
+| `wasm_hello_ns`                       | **~0.56 µs** | ~0.54 µs | ~0.62 µs |
+| `wasm_from_mir_ns`                    | ~6.2 µs   | ~6.3 µs   | ~6.5 µs   |
+| `textual_ir_emit_latency`             | ~63.9 µs  | ~23.7 µs  | ~185.5 µs |
+
+### Manifests
+
+| Suite                                 | mean      | p50       | p95       |
+|---------------------------------------|----------:|----------:|----------:|
+| `openapi_extract_latency`             | ~42.4 µs  | ~19.7 µs  | ~161.8 µs |
+| `ui_manifest_latency`                 | ~25.7 µs  | ~20.1 µs  | ~51.8 µs  |
+| `wasm_component_manifest_latency`     | ~26.6 µs  | ~20.7 µs  | ~61.5 µs  |
+| `mobile_manifest_latency`             | ~20.8 µs  | ~20.8 µs  | ~21.1 µs  |
+
+### Body parser, runtime
+
+| Suite                                 | mean      | p50       | p95       |
+|---------------------------------------|----------:|----------:|----------:|
+| `body_parse_latency`                  | ~38.2 µs  | ~32.3 µs  | ~83.7 µs  |
+| `async_scheduler_throughput` (100 ops)| ~7.9 µs   | ~7.1 µs   | ~10.1 µs  |
+
+### Importers
+
+| Suite                                 | mean      | p50       | p95       |
+|---------------------------------------|----------:|----------:|----------:|
+| `graphql_parse_ns`                    | ~4.4 µs   | ~4.0 µs   | ~5.8 µs   |
+| `graphql_emit_ns`                     | ~7.4 µs   | ~4.5 µs   | ~13.3 µs  |
+| `rpc_parse_ns`                        | ~16.7 µs  | ~14.7 µs  | ~53.7 µs  |
+| `rpc_emit_ns`                         | ~25.6 µs  | ~19.3 µs  | ~76.8 µs  |
+
+### Database
+
+| Suite                                 | mean      | p50       | p95       |
+|---------------------------------------|----------:|----------:|----------:|
+| `sql_query_check_latency`             | ~27.6 µs  | ~11.6 µs  | ~116.7 µs |
+| `migration_toposort_latency`          | ~28.2 µs  | ~9.7 µs   | ~155.6 µs |
+
+### Agent ABI
+
+| Suite                                 | mean      | p50       | p95       |
+|---------------------------------------|----------:|----------:|----------:|
+| `agent_map_budget_500_ns`             | ~37.1 µs  | ~19.7 µs  | ~135.3 µs |
+| `agent_map_budget_2000_ns`            | ~52.2 µs  | ~41.3 µs  | ~152.6 µs |
+| `agent_map_budget_4000_ns`            | ~59.8 µs  | ~41.3 µs  | ~215.1 µs |
+| `coverage_report_latency`             | ~57.4 µs  | ~41.0 µs  | ~191.1 µs |
+| `docs_human_ns`                       | ~83.1 µs  | ~62.9 µs  | ~253.7 µs |
+| `docs_agent_budget_1500_ns`           | ~63.6 µs  | ~28.4 µs  | ~206.8 µs |
+| `preproc_substitute_ns`               | **~0.77 µs** | ~0.71 µs | ~0.88 µs |
+
+### Incremental + query engine
+
+| Suite                                 | mean      | p50       | p95       |
+|---------------------------------------|----------:|----------:|----------:|
+| `incremental_cache_latency`           | ~41.4 µs  | ~23.7 µs  | ~108.4 µs |
+| `query_fingerprint_latency`           | ~38.8 µs  | ~21.3 µs  | ~108.1 µs |
+
+**Headline.** Patch validation and the wasm-encoder cold path are
+sub-microsecond. Every per-symbol manifest (capability / OpenAPI / UI /
+wasm component / mobile) lands under 50 µs at p50. The most expensive
+shipping pass is effect propagation (~100 µs p50) because it walks the
+entire body parser output. The whole compile + emit-capsule +
+budget-pack-symbol-map + patch round-trip on a typical storefront API
+file fits in well under 200 µs at p95.
 
 The full structured run lives in `BENCHMARKS.results.json` and matches
 `schemas/benchmark.schema.json`.
