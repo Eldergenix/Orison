@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.dev/schemas/agent-diagnose.schema.json",
+  "title": "Orison Agent Diagnose v1",
+  "description": "Aggregated diagnostic report emitted by `ori agent diagnose`. Provides an overall status, error/warning counts, the raw diagnostic stream, and the highest-confidence repair candidates extracted from diagnostic `fixes`.",
+  "type": "object",
+  "required": [
+    "schema",
+    "module",
+    "overall_status",
+    "errors",
+    "warnings",
+    "diagnostics",
+    "top_repair_candidates"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.agent_diagnose.v1"
+    },
+    "module": {
+      "type": "string",
+      "minLength": 1
+    },
+    "overall_status": {
+      "enum": ["ok", "warn", "error"]
+    },
+    "errors": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "warnings": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "description": "Per-diagnostic payloads — each conforms to `schemas/diagnostic.schema.json`."
+    },
+    "top_repair_candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["diagnostic_id", "fix_kind", "description", "confidence"],
+        "properties": {
+          "diagnostic_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "fix_kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0
+          }
+        },
+        "additionalProperties": false
+      },
+      "maxItems": 8
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.agent_diagnose.v1",
+      "module": "demo.users",
+      "overall_status": "error",
+      "errors": 1,
+      "warnings": 0,
+      "diagnostics": [
+        {
+          "schema": "ori.diagnostic.v1",
+          "id": "E0100",
+          "level": "error",
+          "message": "`null` is not part of Orison; use Option[T]"
+        }
+      ],
+      "top_repair_candidates": [
+        {
+          "diagnostic_id": "E0100",
+          "fix_kind": "replace_null",
+          "description": "Replace `null` with `None` or an explicit Option value.",
+          "confidence": 0.82
+        }
+      ]
+    }
+  ]
+}

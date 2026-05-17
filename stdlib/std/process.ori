@@ -1,0 +1,20 @@
+// capsule: std.process — typed subprocess surface (bootstrap stub)
+module std.process
+
+type Pid wraps Int
+
+type CommandResult = {
+  exit_code: Int,
+  stdout: Str,
+  stderr: Str
+}
+
+variant ProcessError =
+  | NotFound(program: Str)
+  | Denied
+  | Signal(code: Int)
+  | InvalidArgs(reason: Str)
+
+fn spawn(program: Str, args: List[Str]) -> Result[Pid, ProcessError] uses process.spawn
+fn run(program: Str, args: List[Str]) -> Result[CommandResult, ProcessError] uses process.spawn
+fn wait(pid: Pid) -> Result[Int, ProcessError] uses process.spawn

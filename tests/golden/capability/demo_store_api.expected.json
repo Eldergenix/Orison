@@ -1,0 +1,39 @@
+{
+  "effects": [
+    {
+      "name": "db.read",
+      "uses": [
+        "sym:demo_store.api.Storefront",
+        "sym:demo_store.api.get_product",
+        "sym:demo_store.api.get_products"
+      ]
+    },
+    {
+      "name": "db.write",
+      "uses": [
+        "sym:demo_store.api.Storefront",
+        "sym:demo_store.api.post_checkout"
+      ]
+    },
+    {
+      "name": "http",
+      "uses": [
+        "sym:demo_store.api.Storefront",
+        "sym:demo_store.api.get_product",
+        "sym:demo_store.api.get_products",
+        "sym:demo_store.api.post_checkout"
+      ]
+    }
+  ],
+  "module": "demo_store.api",
+  "policy": {
+    "declared": [
+      "http",
+      "db.read",
+      "db.write"
+    ],
+    "undeclared": [],
+    "unused": []
+  },
+  "schema": "ori.capability.v1"
+}

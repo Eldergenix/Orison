@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.dev/schemas/lsp-code-action.schema.json",
+  "title": "Orison LSP Code Action v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "title",
+    "kind",
+    "diagnostic_id",
+    "edit_patch_ref",
+    "preferred"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.lsp_code_action.v1"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "kind": {
+      "enum": [
+        "quickfix",
+        "refactor",
+        "refactor.extract",
+        "source.fixAll"
+      ]
+    },
+    "diagnostic_id": {
+      "type": "string",
+      "pattern": "^[A-Z][0-9]{4}$|^P[0-9]{4}$"
+    },
+    "edit_patch_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "preferred": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.lsp_code_action.v1",
+      "title": "Wrap return value in Result::Ok",
+      "kind": "quickfix",
+      "diagnostic_id": "E0042",
+      "edit_patch_ref": "patch:store.users.fetch_user.wrap-ok",
+      "preferred": true
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.invalid/schemas/patch-check.schema.json",
+  "title": "Orison Patch Check v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "valid",
+    "diagnostics"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.patch_check.v1"
+    },
+    "valid": {
+      "type": "boolean"
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "$ref": "diagnostic.schema.json"
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,9 @@
+[package]
+name = "counter"
+version = "0.1.0"
+edition = "2027.1"
+description = "Minimal counter example"
+license = "Apache-2.0"
+
+[capabilities]
+declared = ["ui"]

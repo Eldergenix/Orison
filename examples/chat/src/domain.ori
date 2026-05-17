@@ -1,0 +1,23 @@
+// capsule: chat.domain — typed domain for the chat example
+module chat.domain
+
+type RoomId wraps Str
+type UserId wraps Str
+
+type Message = {
+  id: Str,
+  room: RoomId,
+  author: UserId,
+  at_unix_seconds: Int,
+  payload: MessagePayload
+}
+
+type MessagePayload =
+  | Text(body: Str)
+  | Image(url: Str, alt: Str)
+  | System(event: SystemEvent)
+
+type SystemEvent =
+  | UserJoined(user: UserId)
+  | UserLeft(user: UserId)
+  | RoomArchived(reason: Str)

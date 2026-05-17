@@ -1,0 +1,4 @@
+module diag.bare_result
+
+fn do_it() -> Result:
+  return Ok(1)

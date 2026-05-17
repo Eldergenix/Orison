@@ -1,0 +1,19 @@
+// capsule: std.logging — Structured logging via the platform Log capability.
+module std.logging
+
+capability Log
+
+type Level =
+  | Debug
+  | Info
+  | Warn
+  | Error
+
+fn log(level: Level, message: Str) -> Unit uses Log:
+  return Unit
+
+fn info(message: Str) -> Unit uses Log:
+  return Unit
+
+fn error(message: Str) -> Unit uses Log:
+  return Unit

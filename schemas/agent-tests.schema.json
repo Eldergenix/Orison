@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.dev/schemas/agent-tests.schema.json",
+  "title": "Orison Agent Tests v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "root",
+    "total_tests",
+    "selected",
+    "skipped"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.agent_tests.v1"
+    },
+    "root": {
+      "type": "string",
+      "minLength": 1
+    },
+    "total_tests": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "selected": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/test_entry"
+      }
+    },
+    "skipped": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/test_entry"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "position": {
+      "type": "object",
+      "required": [
+        "line",
+        "column"
+      ],
+      "properties": {
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "span": {
+      "type": "object",
+      "required": [
+        "file",
+        "start",
+        "end"
+      ],
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "start": {
+          "$ref": "#/$defs/position"
+        },
+        "end": {
+          "$ref": "#/$defs/position"
+        }
+      },
+      "additionalProperties": false
+    },
+    "test_entry": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "file",
+        "span",
+        "reason"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "span": {
+          "$ref": "#/$defs/span"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "examples": [
+    {
+      "schema": "ori.agent_tests.v1",
+      "root": "tests/",
+      "total_tests": 42,
+      "selected": [
+        {
+          "id": "test:store.users.fetch_user_ok",
+          "name": "fetch_user returns user when present",
+          "file": "tests/store/users.ori",
+          "span": {
+            "file": "tests/store/users.ori",
+            "start": {
+              "line": 10,
+              "column": 1
+            },
+            "end": {
+              "line": 25,
+              "column": 2
+            }
+          },
+          "reason": "covers changed symbol sym:store.users.fetch_user"
+        }
+      ],
+      "skipped": [
+        {
+          "id": "test:store.users.fetch_user_legacy",
+          "name": "legacy fetch_user behavior",
+          "file": "tests/store/users.ori",
+          "span": {
+            "file": "tests/store/users.ori",
+            "start": {
+              "line": 30,
+              "column": 1
+            },
+            "end": {
+              "line": 45,
+              "column": 2
+            }
+          },
+          "reason": "marked #[ignore]"
+        }
+      ]
+    }
+  ]
+}

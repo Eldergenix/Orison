@@ -1,0 +1,13 @@
+{
+  "schema": "ori.change.v1",
+  "intent": "Introduce the typed checkout route on the Storefront service: post_checkout(Cart) -> Result[Order, CheckoutError] uses http, db.write.",
+  "public_api_changed": true,
+  "security_relevant": true,
+  "capabilities_added": ["db.write", "http"],
+  "tests_added": [
+    "sym:demo_store.tests.store_smoke.test_invalid_cart_returns_err",
+    "sym:demo_store.tests.store_smoke.test_cart_empty_total_is_zero",
+    "sym:demo_store.tests.store_smoke.test_add_line_increases_total"
+  ],
+  "expected_diagnostics": []
+}

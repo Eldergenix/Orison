@@ -1,0 +1,82 @@
+{
+  "budget": 2000,
+  "diagnostic_count": 0,
+  "error_count": 0,
+  "imports": [
+    "std.json",
+    "std.sql",
+    "app.services",
+    "app.views"
+  ],
+  "module": "store.users",
+  "schema": "ori.agent_map.v1",
+  "symbols": [
+    {
+      "effects": [],
+      "id": "mod:store.users",
+      "kind": "module",
+      "name": "store.users",
+      "signature": "module store.users"
+    },
+    {
+      "effects": [],
+      "id": "sym:store.users.UserId",
+      "kind": "type",
+      "name": "UserId",
+      "signature": "type UserId wraps UUID"
+    },
+    {
+      "effects": [],
+      "id": "sym:store.users.Email",
+      "kind": "type",
+      "name": "Email",
+      "signature": "type Email wraps Str"
+    },
+    {
+      "effects": [],
+      "id": "sym:store.users.User",
+      "kind": "type",
+      "name": "User",
+      "signature": "type User = {"
+    },
+    {
+      "effects": [],
+      "id": "sym:store.users.ApiErr",
+      "kind": "type",
+      "name": "ApiErr",
+      "signature": "type ApiErr ="
+    },
+    {
+      "effects": [
+        "db.read"
+      ],
+      "id": "sym:store.users.fetch_user",
+      "kind": "function",
+      "name": "fetch_user",
+      "signature": "fn fetch_user(id: UserId) -> Result[User, ApiErr] uses db.read"
+    },
+    {
+      "effects": [
+        "http",
+        "db.read",
+        "db.write"
+      ],
+      "id": "sym:store.users.Users",
+      "kind": "service",
+      "name": "Users",
+      "signature": "service Users uses http, db.read, db.write"
+    },
+    {
+      "effects": [
+        "ui"
+      ],
+      "id": "sym:store.users.UserCard",
+      "kind": "view",
+      "name": "UserCard",
+      "signature": "view UserCard(user: User) -> Html uses ui"
+    }
+  ],
+  "truncated": false,
+  "used_estimate": 816,
+  "warning_count": 0
+}

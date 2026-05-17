@@ -1,0 +1,13 @@
+// capsule: todo_app.storage — typed CRUD over Todo
+module todo_app.storage
+
+import todo_app.domain
+
+variant StorageError =
+  | NotFound
+  | Conflict(reason: Str)
+
+fn insert(todo: Todo) -> Result[Todo, StorageError] uses db.write
+fn fetch(id: TodoId) -> Result[Todo, StorageError] uses db.read
+fn list_all() -> List[Todo] uses db.read
+fn remove(id: TodoId) -> Result[Unit, StorageError] uses db.write

@@ -1,0 +1,26 @@
+// capsule: core.result — Error values that replace exceptions with explicit cases.
+module core.result
+
+type Result[T, E] =
+  | Ok(value: T)
+  | Err(error: E)
+
+fn map_ok[T, E, U](result: Result[T, E], f: Fn(T) -> U) -> Result[U, E]:
+  match result:
+    Ok(value) => return Ok(f(value))
+    Err(error) => return Err(error)
+
+fn map_err[T, E, F](result: Result[T, E], f: Fn(E) -> F) -> Result[T, F]:
+  match result:
+    Ok(value) => return Ok(value)
+    Err(error) => return Err(f(error))
+
+fn unwrap_or[T, E](result: Result[T, E], default: T) -> T:
+  match result:
+    Ok(value) => return value
+    Err(error) => return default
+
+fn is_ok[T, E](result: Result[T, E]) -> Bool:
+  match result:
+    Ok(value) => return true
+    Err(error) => return false

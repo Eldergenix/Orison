@@ -1,0 +1,19 @@
+// capsule: std.http — Outbound HTTP client primitives with explicit effect tracking.
+module std.http
+
+import core.result
+
+type Request
+
+type Response
+
+type HttpError =
+  | Network(reason: Str)
+  | NonSuccess(status: Int)
+  | InvalidResponse
+
+fn get(url: Str) -> Result[Response, HttpError] uses net.outbound:
+  return Err(InvalidResponse)
+
+fn post(url: Str, body: Str) -> Result[Response, HttpError] uses net.outbound:
+  return Err(InvalidResponse)

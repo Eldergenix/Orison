@@ -1,0 +1,21 @@
+// capsule: core.list — Persistent list type and structural transforms.
+module core.list
+
+import core.option
+
+type List[T]
+
+fn push[T](list: List[T], value: T) -> List[T]:
+  return list
+
+fn pop[T](list: List[T]) -> Option[T]:
+  return None
+
+fn len[T](list: List[T]) -> Int:
+  return 0
+
+fn map[T, U](list: List[T], f: Fn(T) -> U) -> List[U]:
+  return List.empty()
+
+fn filter[T](list: List[T], pred: Fn(T) -> Bool) -> List[T]:
+  return list

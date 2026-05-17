@@ -1,0 +1,6 @@
+module parser.views
+
+view Z(title: Str, count: Int) -> Html uses ui:
+  card:
+    heading(level: 1, text: title)
+    text(count.to_str())

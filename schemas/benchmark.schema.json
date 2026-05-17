@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.dev/schemas/benchmark.schema.json",
+  "title": "Orison Benchmark Report v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "generated_at",
+    "environment",
+    "suites"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.benchmark.v1"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "environment": {
+      "type": "object",
+      "required": [
+        "os",
+        "arch",
+        "rustc_version",
+        "cpu"
+      ],
+      "properties": {
+        "os": {
+          "type": "string",
+          "minLength": 1
+        },
+        "arch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rustc_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cpu": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "suites": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "metrics"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "metrics": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "key",
+                "unit",
+                "samples",
+                "mean",
+                "p50",
+                "p95",
+                "max",
+                "min"
+              ],
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "unit": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "samples": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "mean": {
+                  "type": "number"
+                },
+                "p50": {
+                  "type": "number"
+                },
+                "p95": {
+                  "type": "number"
+                },
+                "max": {
+                  "type": "number"
+                },
+                "min": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.benchmark.v1",
+      "generated_at": "2026-05-16T12:00:00Z",
+      "environment": {
+        "os": "darwin",
+        "arch": "arm64",
+        "rustc_version": "1.83.0",
+        "cpu": "Apple M2"
+      },
+      "suites": [
+        {
+          "name": "compiler.parse",
+          "metrics": [
+            {
+              "key": "wall_time",
+              "unit": "ms",
+              "samples": 100,
+              "mean": 12.3,
+              "p50": 11.8,
+              "p95": 15.6,
+              "max": 22.1,
+              "min": 9.4
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

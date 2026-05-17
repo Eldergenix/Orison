@@ -1,0 +1,24 @@
+# Demo Storefront package manifest.
+#
+# This manifest is the source of truth for declared capabilities,
+# dependencies, and the developer scripts that drive the demo.
+
+[package]
+name = "demo_store"
+version = "0.1.0"
+edition = "2027.1"
+description = "Canonical Orison demo: a typed, capability-checked storefront with backend, UI, queries, migrations, and agent patch contracts."
+license = "Apache-2.0"
+
+[capabilities]
+declared = ["db.read", "db.write", "http", "ui", "fs.read"]
+
+[dependencies]
+core = "*"
+std = "*"
+app = "*"
+
+[scripts]
+dev = "ori run examples/demo_store/src/main.ori"
+test = "ori test examples/demo_store --json"
+build = "ori build examples/demo_store --dev"

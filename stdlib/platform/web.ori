@@ -1,0 +1,16 @@
+// capsule: platform.web — DOM bindings + page lifecycle (bootstrap stub)
+module platform.web
+
+type Document
+type Element
+type Event
+
+fn get_document() -> Document uses ui
+fn query_selector(doc: Document, selector: Str) -> Option[Element] uses ui
+fn add_listener(el: Element, event_name: Str, handler: Fn(Event) -> Unit) -> Unit uses ui
+fn navigate(url: Str) -> Unit uses ui, net.outbound
+
+variant LifecycleEvent =
+  | Mount
+  | Unmount
+  | Visibility(visible: Bool)

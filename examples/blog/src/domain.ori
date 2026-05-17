@@ -1,0 +1,20 @@
+// capsule: blog.domain — typed domain for the blog example
+module blog.domain
+
+type PostId wraps Str
+type AuthorId wraps Str
+type Slug wraps Str
+
+type Post = {
+  id: PostId,
+  slug: Slug,
+  author: AuthorId,
+  title: Str,
+  body: Str,
+  status: PostStatus
+}
+
+type PostStatus =
+  | Draft
+  | Published(at_unix_seconds: Int)
+  | Archived(reason: Str)

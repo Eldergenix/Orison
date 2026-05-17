@@ -1,0 +1,17 @@
+// capsule: labs.experimental — incubating APIs (no stability guarantees)
+module labs.experimental
+
+// Capability-gated experimental knobs. These are intentionally narrow
+// surfaces; the labs layer ships behind a feature flag in production
+// distributions.
+
+capability Experimentation
+
+variant ExperimentalFeature =
+  | StreamingDiagnostics
+  | InlineCapsules
+  | AgentChatBackchannel
+
+fn enable_feature(feature: ExperimentalFeature) -> Unit uses Experimentation
+fn disable_feature(feature: ExperimentalFeature) -> Unit uses Experimentation
+fn list_enabled_features() -> List[ExperimentalFeature]

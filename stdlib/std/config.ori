@@ -1,0 +1,15 @@
+// capsule: std.config — Read-only access to environment configuration values.
+module std.config
+
+import core.option
+import core.result
+
+type ConfigError =
+  | Missing(key: Str)
+  | Invalid(key: Str, reason: Str)
+
+fn get(key: Str) -> Option[Str] uses env.read:
+  return None
+
+fn require(key: Str) -> Result[Str, ConfigError] uses env.read:
+  return Err(Missing(key))

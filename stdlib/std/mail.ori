@@ -1,0 +1,18 @@
+// capsule: std.mail — typed outbound mail surface (bootstrap stub)
+module std.mail
+
+type Address wraps Str
+
+type Message = {
+  from_addr: Address,
+  to: List[Address],
+  subject: Str,
+  body_text: Str
+}
+
+variant MailError =
+  | InvalidRecipient(addr: Address)
+  | Rejected(reason: Str)
+  | Transport(reason: Str)
+
+fn send(message: Message) -> Result[Unit, MailError] uses mail.send

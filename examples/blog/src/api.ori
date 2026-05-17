@@ -1,0 +1,16 @@
+// capsule: blog.api — typed HTTP routes for the blog example
+module blog.api
+
+import blog.domain
+
+service Blog uses http, db.read, db.write
+
+variant ApiError =
+  | NotFound
+  | Forbidden
+  | InvalidSlug(slug: Slug)
+
+fn get_posts() -> List[Post] uses http, db.read
+fn get_post(slug: Slug) -> Result[Post, ApiError] uses http, db.read
+fn create_post(post: Post) -> Result[Post, ApiError] uses http, db.write, auth
+fn delete_post(id: PostId) -> Result[Unit, ApiError] uses http, db.write, auth

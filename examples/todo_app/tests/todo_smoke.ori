@@ -1,0 +1,7 @@
+// capsule: todo_app.tests.todo_smoke — smoke tests for the todo example
+module todo_app.tests.todo_smoke
+
+fn test_new_todo_is_not_done() -> Unit
+fn test_mark_done_flips_done() -> Unit
+fn test_insert_then_fetch_returns_same_todo() -> Unit
+fn test_remove_then_fetch_returns_not_found() -> Unit

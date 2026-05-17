@@ -1,0 +1,7 @@
+module parser.full_signatures
+
+fn fetch(id: Int, kind: Str) -> Result[Bytes, FetchError] uses net.outbound, fs.read:
+  return Ok(Bytes.empty)
+
+fn write_log(line: Str) -> Unit uses fs.write:
+  return Unit

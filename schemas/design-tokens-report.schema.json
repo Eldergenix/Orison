@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.dev/schemas/design-tokens-report.schema.json",
+  "title": "Orison Design Tokens Report v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "views"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.design_tokens_report.v1"
+    },
+    "views": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "view",
+          "used_tokens",
+          "unknown_tokens",
+          "raw_color_literals"
+        ],
+        "properties": {
+          "view": {
+            "type": "string",
+            "minLength": 1
+          },
+          "used_tokens": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "unknown_tokens": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "raw_color_literals": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.design_tokens_report.v1",
+      "views": [
+        {
+          "view": "ProductCard",
+          "used_tokens": [
+            "tokens.colors.primary",
+            "tokens.spacings.s"
+          ],
+          "unknown_tokens": [],
+          "raw_color_literals": []
+        },
+        {
+          "view": "LegacyBanner",
+          "used_tokens": [
+            "tokens.colors.brandiose"
+          ],
+          "unknown_tokens": [
+            "tokens.colors.brandiose"
+          ],
+          "raw_color_literals": [
+            "#ABCDEF",
+            "rgba(0, 0, 0, 0.5)"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+// capsule: app.services — Declarative service and route surface for HTTP applications.
+// NOTE: module is `app.services` (plural) because `service` is a reserved keyword
+// in the bootstrap grammar and would otherwise fail to parse as a module path.
+module app.services
+
+type Service
+
+type Route
+
+fn declare_service(name: Str) -> Service:
+  return Service.empty()
+
+fn declare_route(svc: Service, method: Str, path: Str, handler: Str) -> Service:
+  return svc

@@ -1,0 +1,22 @@
+// capsule: core.string — Pure string utilities operating on Str values.
+module core.string
+
+import core.list
+
+fn len(s: Str) -> Int:
+  return 0
+
+fn split(s: Str, sep: Str) -> List[Str]:
+  return List.empty()
+
+fn join(parts: List[Str], sep: Str) -> Str:
+  return ""
+
+fn to_lower(s: Str) -> Str:
+  return s
+
+fn to_upper(s: Str) -> Str:
+  return s
+
+fn contains(s: Str, needle: Str) -> Bool:
+  return false

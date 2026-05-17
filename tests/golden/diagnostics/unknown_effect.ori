@@ -1,0 +1,4 @@
+module diag.unknown_effect
+
+fn ping() -> Unit uses zoomzoom:
+  return Unit

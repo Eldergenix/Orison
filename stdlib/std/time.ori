@@ -1,0 +1,10 @@
+// capsule: std.time — Monotonic timestamps and elapsed duration helpers.
+module std.time
+
+type Instant
+
+fn now() -> Instant uses time:
+  return Instant.zero()
+
+fn elapsed_ms(start: Instant) -> Int uses time:
+  return 0

@@ -1,0 +1,14 @@
+// capsule: std.url — typed URL parsing surface (bootstrap stub)
+module std.url
+
+type Url
+
+variant UrlError =
+  | Invalid(reason: Str)
+  | UnsupportedScheme(scheme: Str)
+
+fn parse(input: Str) -> Result[Url, UrlError]
+fn scheme(url: Url) -> Str
+fn host(url: Url) -> Option[Str]
+fn path(url: Url) -> Str
+fn append_query(url: Url, key: Str, value: Str) -> Url

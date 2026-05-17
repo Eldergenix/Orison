@@ -1,0 +1,68 @@
+name: sbom
+
+on:
+  workflow_dispatch:
+    inputs:
+      format:
+        description: "SBOM format (ori-native|spdx|cyclonedx)"
+        required: false
+        default: "ori-native"
+
+permissions:
+  contents: read
+
+# The SBOM workflow exists so the supply-chain path is provable end-to-end.
+# Production-quality SBOM emission is gated on M18 (Security and supply chain)
+# of ORISON_AGENT_DEVELOPMENT_HANDOFF.md. Until then, the artefact may be
+# incomplete and must not be relied on as a release attestation.
+
+jobs:
+  sbom:
+    name: emit sbom from release binary
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SBOM_FORMAT: ${{ github.event.inputs.format }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.92"
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-sbom-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', 'rust-toolchain.toml') }}
+          restore-keys: |
+            cargo-sbom-${{ runner.os }}-
+
+      - name: Cargo build --release -p ori
+        run: cargo build --release -p ori
+
+      - name: Emit SBOM
+        run: |
+          fmt="${SBOM_FORMAT:-ori-native}"
+          case "$fmt" in
+            ori-native|spdx|cyclonedx) ;;
+            *)
+              echo "Invalid sbom format: $fmt (expected ori-native|spdx|cyclonedx)" >&2
+              exit 2
+              ;;
+          esac
+          target/release/ori sbom --json --format "$fmt" > sbom.json
+
+      - name: Upload SBOM artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ github.sha }}.json
+          path: sbom.json
+          if-no-files-found: error
+          retention-days: 90

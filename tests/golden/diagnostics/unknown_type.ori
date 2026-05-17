@@ -1,0 +1,4 @@
+module diag.unknown_type
+
+fn make() -> WidgetThatDoesNotExist:
+  return WidgetThatDoesNotExist.new()

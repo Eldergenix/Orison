@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.dev/schemas/doctor.schema.json",
+  "title": "Orison Doctor Report v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "status",
+    "compiler",
+    "language",
+    "version",
+    "rust_toolchain",
+    "checks",
+    "capabilities_summary",
+    "schema_versions"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.doctor.v1"
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "warn",
+        "error"
+      ]
+    },
+    "compiler": {
+      "type": "string",
+      "minLength": 1
+    },
+    "language": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rust_toolchain": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "status",
+          "detail"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "warn",
+              "error"
+            ]
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "capabilities_summary": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "schema_versions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.doctor.v1",
+      "status": "ok",
+      "compiler": "ori-compiler",
+      "language": "orison",
+      "version": "0.1.0",
+      "rust_toolchain": "1.83.0",
+      "checks": [
+        {
+          "name": "rustc-available",
+          "status": "ok",
+          "detail": "rustc 1.83.0 detected"
+        },
+        {
+          "name": "schemas-valid",
+          "status": "ok",
+          "detail": "all repository schemas parsed"
+        }
+      ],
+      "capabilities_summary": [
+        "fs.read",
+        "net.fetch"
+      ],
+      "schema_versions": {
+        "ori.diagnostic": "v1",
+        "ori.capsule": "v1",
+        "ori.doctor": "v1"
+      }
+    }
+  ]
+}

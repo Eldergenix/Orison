@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.dev/schemas/migration-graph.schema.json",
+  "title": "Orison Migration Graph v1",
+  "description": "Deterministic apply order for a module's `migration` declarations, plus any cycles detected during topological sort.",
+  "type": "object",
+  "required": [
+    "schema",
+    "ordered",
+    "cycles"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.migration_graph.v1"
+    },
+    "ordered": {
+      "type": "array",
+      "description": "Migration ids in the deterministic apply order. Empty if a cycle was detected.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "cycles": {
+      "type": "array",
+      "description": "Each entry is a sorted list of migration ids participating in a dependency cycle. Empty when the graph is a DAG.",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        },
+        "minItems": 1
+      }
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.migration_graph.v1",
+      "ordered": [
+        "init_products",
+        "add_product_search"
+      ],
+      "cycles": []
+    },
+    {
+      "schema": "ori.migration_graph.v1",
+      "ordered": [],
+      "cycles": [
+        [
+          "a",
+          "b"
+        ]
+      ]
+    }
+  ]
+}

@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.dev/schemas/agent-symbol-list.schema.json",
+  "title": "Orison Agent Symbol List v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "module",
+    "symbols"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.agent_symbol_list.v1"
+    },
+    "module": {
+      "type": "string",
+      "minLength": 1
+    },
+    "symbols": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "signature",
+          "changed",
+          "reason"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "signature": {
+            "type": "string",
+            "minLength": 1
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.agent_symbol_list.v1",
+      "module": "store.users",
+      "symbols": [
+        {
+          "id": "sym:store.users.fetch_user",
+          "name": "fetch_user",
+          "kind": "function",
+          "signature": "fn fetch_user(id: UserId) -> Result<User, FetchError>",
+          "changed": true,
+          "reason": "signature updated to return Result"
+        },
+        {
+          "id": "sym:store.users.User",
+          "name": "User",
+          "kind": "struct",
+          "signature": "struct User { id: UserId, name: String }",
+          "changed": false,
+          "reason": null
+        }
+      ]
+    }
+  ]
+}

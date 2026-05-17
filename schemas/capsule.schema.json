@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.invalid/schemas/capsule.schema.json",
+  "title": "Orison Capsule v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "module",
+    "path",
+    "hash",
+    "exports",
+    "imports",
+    "invariants",
+    "agent"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.capsule.v1"
+    },
+    "module": {
+      "type": "string",
+      "minLength": 1
+    },
+    "path": {
+      "type": "string"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^fnv1a:[0-9a-f]{16}$"
+    },
+    "exports": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/symbol"
+      }
+    },
+    "imports": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "invariants": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "agent": {
+      "type": "object",
+      "required": [
+        "token_summary",
+        "recommended_context"
+      ],
+      "properties": {
+        "token_summary": {
+          "type": "string"
+        },
+        "recommended_context": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "symbol": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "name",
+        "signature",
+        "effects",
+        "calls",
+        "tests",
+        "summary"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1
+        },
+        "effects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "calls": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tests": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

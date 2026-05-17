@@ -1,0 +1,7 @@
+module diag.dupes
+
+fn run() -> Int:
+  return 1
+
+fn run() -> Int:
+  return 2

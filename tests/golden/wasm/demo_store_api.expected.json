@@ -1,0 +1,50 @@
+{
+  "build_target": "wasm32-component",
+  "capabilities": [
+    "db.read",
+    "db.write",
+    "http"
+  ],
+  "exports": [
+    {
+      "kind": "service",
+      "name": "Storefront",
+      "signature": "service Storefront uses http, db.read, db.write"
+    },
+    {
+      "kind": "function",
+      "name": "get_products",
+      "signature": "fn get_products() -> List[Product] uses http, db.read"
+    },
+    {
+      "kind": "function",
+      "name": "get_product",
+      "signature": "fn get_product(id: ProductId) -> Result[Product, CatalogError] uses http, db.read"
+    },
+    {
+      "kind": "function",
+      "name": "post_checkout",
+      "signature": "fn post_checkout(cart: Cart) -> Result[Order, CheckoutError] uses http, db.write"
+    }
+  ],
+  "imports": [
+    {
+      "kind": "module",
+      "name": "demo_store.domain",
+      "source": "demo_store.domain"
+    },
+    {
+      "kind": "module",
+      "name": "demo_store.catalog",
+      "source": "demo_store.catalog"
+    },
+    {
+      "kind": "module",
+      "name": "demo_store.cart",
+      "source": "demo_store.cart"
+    }
+  ],
+  "module": "demo_store.api",
+  "schema": "ori.wasm_component.v1",
+  "world": "demo_store-api-world"
+}

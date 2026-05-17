@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.dev/schemas/wasm-component.schema.json",
+  "title": "Orison Wasm Component Manifest v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "module",
+    "world",
+    "exports",
+    "imports",
+    "capabilities",
+    "build_target"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.wasm_component.v1"
+    },
+    "module": {
+      "type": "string",
+      "minLength": 1
+    },
+    "world": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "exports": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "kind",
+          "signature"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "signature": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "imports": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "kind",
+          "source"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "build_target": {
+      "enum": [
+        "wasm32-component",
+        "wasm32-unknown"
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.wasm_component.v1",
+      "module": "app.users",
+      "world": "users-world",
+      "exports": [
+        {
+          "name": "fetch-user",
+          "kind": "function",
+          "signature": "func(id: string) -> result<user, fetch-error>"
+        }
+      ],
+      "imports": [
+        {
+          "name": "wasi:http/outgoing-handler",
+          "kind": "function",
+          "source": "wasi:http"
+        }
+      ],
+      "capabilities": [
+        "net.fetch"
+      ],
+      "build_target": "wasm32-component"
+    }
+  ]
+}

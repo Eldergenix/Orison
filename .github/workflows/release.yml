@@ -1,0 +1,145 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bench_samples:
+        description: "Number of samples for ori bench"
+        required: false
+        default: "50"
+
+permissions:
+  contents: read
+
+jobs:
+  full-gate:
+    name: full validation gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.92"
+          components: rustfmt, clippy
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-release-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', 'rust-toolchain.toml') }}
+          restore-keys: |
+            cargo-release-${{ runner.os }}-
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Python validation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install jsonschema
+
+      - name: Run full quality gate
+        run: python3 scripts/validate_all.py --full
+
+  build-release:
+    name: build release binary
+    needs: full-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.92"
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-release-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', 'rust-toolchain.toml') }}
+          restore-keys: |
+            cargo-release-${{ runner.os }}-
+
+      - name: Cargo build --release -p ori
+        run: cargo build --release -p ori
+
+      - name: Upload release binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ori-release-${{ github.sha }}
+          path: target/release/ori
+          if-no-files-found: error
+          retention-days: 30
+
+  bench:
+    name: benchmark release binary
+    needs: build-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BENCH_SAMPLES: ${{ github.event.inputs.bench_samples }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.92"
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-release-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', 'rust-toolchain.toml') }}
+          restore-keys: |
+            cargo-release-${{ runner.os }}-
+
+      - name: Cargo build --release -p ori
+        run: cargo build --release -p ori
+
+      - name: Run benchmark suite
+        run: |
+          samples="${BENCH_SAMPLES:-50}"
+          # Validate the samples input is a positive integer to defend against
+          # workflow_dispatch input injection.
+          case "$samples" in
+            ''|*[!0-9]*)
+              echo "Invalid bench_samples value: $samples" >&2
+              exit 2
+              ;;
+          esac
+          target/release/ori bench --samples "$samples" --json > BENCHMARKS.results.json
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-${{ github.sha }}.json
+          path: BENCHMARKS.results.json
+          if-no-files-found: error
+          retention-days: 90
+
+# Publishing (crates.io, GitHub Release, container images) is intentionally
+# omitted. It is gated on a future release-policy decision recorded in
+# MEMORY.md. This workflow proves the build/bench path is reproducible.

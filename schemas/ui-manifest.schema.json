@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.dev/schemas/ui-manifest.schema.json",
+  "title": "Orison UI Manifest v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "views"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.ui_manifest.v1"
+    },
+    "views": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "symbol",
+          "name",
+          "route",
+          "props",
+          "tokens_used",
+          "accessibility_findings"
+        ],
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "route": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "props": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "type"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "type": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "tokens_used": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "accessibility_findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "severity",
+                "message"
+              ],
+              "properties": {
+                "severity": {
+                  "enum": [
+                    "info",
+                    "warn",
+                    "error"
+                  ]
+                },
+                "message": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.ui_manifest.v1",
+      "views": [
+        {
+          "symbol": "sym:app.ui.UserList",
+          "name": "UserList",
+          "route": "/users",
+          "props": [
+            {
+              "name": "users",
+              "type": "Vec<User>"
+            },
+            {
+              "name": "on_select",
+              "type": "Fn(UserId)"
+            }
+          ],
+          "tokens_used": [
+            "color.surface",
+            "space.md"
+          ],
+          "accessibility_findings": [
+            {
+              "severity": "warn",
+              "message": "List items missing accessible labels"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

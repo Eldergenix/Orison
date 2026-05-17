@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.dev/schemas/graphql-import.schema.json",
+  "title": "Orison GraphQL Import Report v1",
+  "description": "Stable envelope returned by `ori schema import graphql` describing a GraphQL SDL → Orison module import. Counts mirror the structural categories produced by `parse_sdl` and `to_orison_module` in the compiler.",
+  "type": "object",
+  "required": [
+    "schema",
+    "module",
+    "types",
+    "queries",
+    "mutations",
+    "generated_lines",
+    "unsupported"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.graphql_import.v1"
+    },
+    "module": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Fully qualified Orison module name that the generated source will live in (e.g. `app.clients.github`)."
+    },
+    "types": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of GraphQL object types lifted into Orison record declarations."
+    },
+    "queries": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of `type Query { ... }` fields turned into Orison `fn` declarations."
+    },
+    "mutations": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of `type Mutation { ... }` fields turned into Orison `fn` declarations."
+    },
+    "generated_lines": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Line count of the emitted Orison source (a trailing newline does not count as an extra line)."
+    },
+    "unsupported": {
+      "type": "array",
+      "description": "GraphQL declarations recognised by the parser but not yet modelled by the bootstrap importer (e.g. `enum Role`, `interface Node`, `union Result`).",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.graphql_import.v1",
+      "module": "app.clients.github",
+      "types": 2,
+      "queries": 1,
+      "mutations": 1,
+      "generated_lines": 14,
+      "unsupported": []
+    },
+    {
+      "schema": "ori.graphql_import.v1",
+      "module": "demo",
+      "types": 1,
+      "queries": 0,
+      "mutations": 0,
+      "generated_lines": 6,
+      "unsupported": [
+        "enum Role",
+        "scalar DateTime"
+      ]
+    }
+  ]
+}

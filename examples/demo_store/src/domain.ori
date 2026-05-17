@@ -1,0 +1,56 @@
+module demo_store.domain
+
+// Core domain types for the Demo Storefront.
+//
+// All identifiers are modelled as newtypes so the type system can keep
+// product, order, and customer references from being silently swapped.
+// All errors and absence are encoded with Result and Option; this module
+// must never reach for null or exception-style control flow.
+
+type ProductId wraps Str
+
+type OrderId wraps Str
+
+type Email wraps Str
+
+type Money = {
+  currency: Str,
+  amount_minor: Int
+}
+
+type Product = {
+  id: ProductId,
+  sku: Str,
+  name: Str,
+  price: Money,
+  stock: Int
+}
+
+type CartLine = {
+  product_id: ProductId,
+  qty: Int
+}
+
+type Cart = {
+  customer: Email,
+  lines: List[CartLine]
+}
+
+type OrderStatus =
+  | Pending
+  | Paid
+  | Fulfilled
+  | Cancelled(reason: Str)
+
+type Order = {
+  id: OrderId,
+  customer: Email,
+  total: Money,
+  status: OrderStatus
+}
+
+fn money_zero() -> Money:
+  return Money { currency: "USD", amount_minor: 0 }
+
+fn cart_empty(customer: Email) -> Cart:
+  return Cart { customer: customer, lines: [] }

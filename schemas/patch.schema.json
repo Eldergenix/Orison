@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.invalid/schemas/patch.schema.json",
+  "title": "Orison Patch v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "intent",
+    "operations"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.patch.v1"
+    },
+    "intent": {
+      "type": "string",
+      "minLength": 1
+    },
+    "operations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/operation"
+      }
+    },
+    "tests": {
+      "type": "object",
+      "properties": {
+        "run": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "expected": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "operation": {
+      "type": "object",
+      "required": [
+        "op"
+      ],
+      "properties": {
+        "op": {
+          "enum": [
+            "replace_node",
+            "insert_node",
+            "delete_node",
+            "rename_symbol",
+            "add_import",
+            "remove_import",
+            "change_signature",
+            "insert_match_arm",
+            "add_field",
+            "remove_field",
+            "add_protocol_impl",
+            "update_route",
+            "update_view",
+            "add_test"
+          ]
+        },
+        "target": {
+          "type": "string"
+        },
+        "position": {
+          "type": "string"
+        },
+        "node": {
+          "type": "object"
+        },
+        "text": {
+          "type": "string"
+        },
+        "pattern": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,23 @@
+/target/
+/.ori-cache/
+*.log
+*.tmp
+.DS_Store
+.idea/
+.vscode/
+
+# Build / test artefacts
+target/
+**/*.rs.bk
+Cargo.lock.bak
+.DS_Store
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local benchmark output is committed (BENCHMARKS.results.json); other
+# *.results.json from ad-hoc local runs are not.
+/tmp_bench_*.json

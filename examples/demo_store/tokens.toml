@@ -1,0 +1,16 @@
+# Demo storefront design tokens.
+#
+# Loaded by `ori design check --tokens examples/demo_store/tokens.toml`.
+# The accepted TOML subset only supports `[section]` headers plus
+# `key = "value"` string assignments; see
+# `crates/ori-compiler/src/design_tokens.rs` for the full grammar.
+
+[colors]
+primary = "#3366ff"
+danger  = "#cc0033"
+
+[spacings]
+s = "4px"
+
+[fonts]
+body = "Inter"

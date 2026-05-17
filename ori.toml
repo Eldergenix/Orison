@@ -1,0 +1,18 @@
+schema = "ori.manifest.v1"
+
+[package]
+name = "orison.bootstrap"
+version = "0.1.1"
+edition = "2027.1"
+description = "Orison language and toolchain bootstrap repository"
+license = "Apache-2.0"
+
+[capabilities]
+declared = ["fs.read", "fs.write"]
+denied = []
+
+[dependencies]
+
+[scripts]
+check = "cargo run -p ori -- check"
+test = "cargo test --workspace"

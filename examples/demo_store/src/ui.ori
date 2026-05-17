@@ -1,0 +1,37 @@
+module demo_store.ui
+
+// Typed UI surface for the storefront.
+//
+// Views are declared with typed props so the compiler can check call
+// sites against the same record shapes the API and database modules use.
+// The admin editor additionally requires the `auth` capability so access
+// to mutation surfaces is explicit at the type level.
+
+import demo_store.domain
+import demo_store.cart
+
+view ProductList(products: List[Product]) -> Html uses ui:
+  list:
+    for product in products:
+      heading(level: 3, text: product.name)
+      text(product.sku)
+
+view ProductDetail(product: Product) -> Html uses ui:
+  card:
+    heading(level: 2, text: product.name)
+    text(product.sku)
+
+view CartSummary(cart: Cart) -> Html uses ui:
+  card:
+    heading(level: 2, text: "Cart")
+    text(cart.customer.value)
+
+view CheckoutForm(cart: Cart) -> Html uses ui:
+  form:
+    heading(level: 2, text: "Checkout")
+    text(cart.customer.value)
+
+view AdminProductEditor(product: Product) -> Html uses ui, auth:
+  card:
+    heading(level: 2, text: "Edit product")
+    text(product.sku)

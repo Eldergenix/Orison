@@ -1,0 +1,108 @@
+{
+  "agent": {
+    "recommended_context": [
+      "sym:store.users.UserId",
+      "sym:store.users.Email",
+      "sym:store.users.User",
+      "sym:store.users.ApiErr",
+      "sym:store.users.fetch_user",
+      "sym:store.users.Users",
+      "sym:store.users.UserCard"
+    ],
+    "token_summary": "Module store.users with 7 exported symbols and 4 imports."
+  },
+  "exports": [
+    {
+      "calls": [],
+      "effects": [],
+      "id": "sym:store.users.UserId",
+      "kind": "type",
+      "name": "UserId",
+      "signature": "type UserId wraps UUID",
+      "summary": "type `UserId` declared in this module.",
+      "tests": []
+    },
+    {
+      "calls": [],
+      "effects": [],
+      "id": "sym:store.users.Email",
+      "kind": "type",
+      "name": "Email",
+      "signature": "type Email wraps Str",
+      "summary": "type `Email` declared in this module.",
+      "tests": []
+    },
+    {
+      "calls": [],
+      "effects": [],
+      "id": "sym:store.users.User",
+      "kind": "type",
+      "name": "User",
+      "signature": "type User = {",
+      "summary": "type `User` declared in this module.",
+      "tests": []
+    },
+    {
+      "calls": [],
+      "effects": [],
+      "id": "sym:store.users.ApiErr",
+      "kind": "type",
+      "name": "ApiErr",
+      "signature": "type ApiErr =",
+      "summary": "type `ApiErr` declared in this module.",
+      "tests": []
+    },
+    {
+      "calls": [],
+      "effects": [
+        "db.read"
+      ],
+      "id": "sym:store.users.fetch_user",
+      "kind": "function",
+      "name": "fetch_user",
+      "signature": "fn fetch_user(id: UserId) -> Result[User, ApiErr] uses db.read",
+      "summary": "function `fetch_user` declared in this module.",
+      "tests": []
+    },
+    {
+      "calls": [],
+      "effects": [
+        "http",
+        "db.read",
+        "db.write"
+      ],
+      "id": "sym:store.users.Users",
+      "kind": "service",
+      "name": "Users",
+      "signature": "service Users uses http, db.read, db.write",
+      "summary": "service `Users` declared in this module.",
+      "tests": []
+    },
+    {
+      "calls": [],
+      "effects": [
+        "ui"
+      ],
+      "id": "sym:store.users.UserCard",
+      "kind": "view",
+      "name": "UserCard",
+      "signature": "view UserCard(user: User) -> Html uses ui",
+      "summary": "view `UserCard` declared in this module.",
+      "tests": []
+    }
+  ],
+  "hash": "<stripped>",
+  "imports": [
+    "std.json",
+    "std.sql",
+    "app.services",
+    "app.views"
+  ],
+  "invariants": [
+    "No null values; use Option[T].",
+    "No exceptions; use Result[T, E]."
+  ],
+  "module": "store.users",
+  "path": "examples/fullstack/users.ori",
+  "schema": "ori.capsule.v1"
+}

@@ -1,0 +1,32 @@
+module demo_store.tests.store_smoke
+
+// Smoke tests exercising the storefront kernel paths.
+//
+// These tests demonstrate the testing surface and provide stable
+// identifiers (`sym:demo_store.tests.store_smoke.<name>`) that
+// Patch IR documents reference under `tests.run`.
+
+import demo_store.domain
+import demo_store.cart
+import demo_store.catalog
+import demo_store.api
+
+fn test_cart_empty_total_is_zero() -> Unit:
+  let cart = cart_empty(Email("alice@example.com"))
+  let totals = total(cart)
+  return Unit
+
+fn test_add_line_increases_total() -> Unit:
+  let cart = cart_empty(Email("alice@example.com"))
+  let line = CartLine { product_id: ProductId("p-001"), qty: 2 }
+  let updated = add_line(cart, line)
+  return Unit
+
+fn test_invalid_cart_returns_err() -> Unit:
+  let cart = cart_empty(Email("alice@example.com"))
+  let result = validate(cart)
+  return Unit
+
+fn test_get_product_not_found_returns_err() -> Unit:
+  let result = fetch_product(ProductId("missing"))
+  return Unit

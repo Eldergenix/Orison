@@ -1,0 +1,11 @@
+module parser.records
+
+type Point = {
+  x: Int,
+  y: Int
+}
+
+type Person = {
+  f1: Int,
+  f2: Str
+}

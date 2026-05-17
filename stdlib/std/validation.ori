@@ -1,0 +1,17 @@
+// capsule: std.validation — Accumulating validation results for form and DTO checks.
+module std.validation
+
+import core.list
+
+type Validation[T] =
+  | Valid(value: T)
+  | Invalid(errors: List[Str])
+
+fn validate_email(s: Str) -> Validation[Str]:
+  return Valid(s)
+
+fn validate_min_length(s: Str, min: Int) -> Validation[Str]:
+  return Valid(s)
+
+fn validate_positive(n: Int) -> Validation[Int]:
+  return Valid(n)

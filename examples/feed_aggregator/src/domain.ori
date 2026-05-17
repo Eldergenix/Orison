@@ -1,0 +1,26 @@
+// capsule: feed_aggregator.domain — feed model
+module feed_aggregator.domain
+
+type FeedId wraps Str
+type EntryId wraps Str
+type FeedUrl wraps Str
+
+type Feed = {
+  id: FeedId,
+  url: FeedUrl,
+  title: Str,
+  last_fetched_unix_seconds: Int
+}
+
+type Entry = {
+  id: EntryId,
+  feed: FeedId,
+  title: Str,
+  body: Str,
+  published_unix_seconds: Int
+}
+
+variant FeedStatus =
+  | Pending
+  | Fetched(at_unix_seconds: Int)
+  | Failed(reason: Str)

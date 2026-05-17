@@ -1,0 +1,7 @@
+module parser.services
+
+service Y uses http, db.read:
+  get "/items" -> List[Int]:
+    return list_items()
+  post "/items" -> Int:
+    return 1

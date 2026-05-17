@@ -1,0 +1,14 @@
+// capsule: std.queue — typed background queue surface (bootstrap stub)
+module std.queue
+
+type Queue[T]
+type JobId wraps Str
+
+variant QueueError =
+  | Closed
+  | Full
+  | Serialization(reason: Str)
+
+fn enqueue(queue: Queue[T], item: T) -> Result[JobId, QueueError]
+fn dequeue(queue: Queue[T]) -> Option[T]
+fn len(queue: Queue[T]) -> Int

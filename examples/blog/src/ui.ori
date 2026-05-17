@@ -1,0 +1,8 @@
+// capsule: blog.ui — typed views for the blog example
+module blog.ui
+
+import blog.domain
+
+view PostList(posts: List[Post]) uses ui
+view PostDetail(post: Post) uses ui
+view PostEditor(post: Post) uses ui, auth

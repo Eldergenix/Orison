@@ -1,0 +1,17 @@
+[package]
+name = "ori"
+version = "0.1.1"
+edition = "2021"
+rust-version = "1.75"
+
+[dependencies]
+ori-compiler = { path = "../ori-compiler" }
+ori-agent = { path = "../ori-agent" }
+ori-lsp = { path = "../ori-lsp" }
+ori-pkg = { path = "../ori-pkg" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[[bin]]
+name = "ori"
+path = "src/main.rs"

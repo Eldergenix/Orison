@@ -1,0 +1,75 @@
+{
+  "schema": "ori.ui_manifest.v1",
+  "views": [
+    {
+      "accessibility_findings": [],
+      "name": "ProductList",
+      "props": [
+        {
+          "name": "products",
+          "type": "List[Product]"
+        }
+      ],
+      "route": null,
+      "symbol": "sym:demo_store.ui.ProductList",
+      "tokens_used": []
+    },
+    {
+      "accessibility_findings": [],
+      "name": "ProductDetail",
+      "props": [
+        {
+          "name": "product",
+          "type": "Product"
+        }
+      ],
+      "route": null,
+      "symbol": "sym:demo_store.ui.ProductDetail",
+      "tokens_used": []
+    },
+    {
+      "accessibility_findings": [],
+      "name": "CartSummary",
+      "props": [
+        {
+          "name": "cart",
+          "type": "Cart"
+        }
+      ],
+      "route": null,
+      "symbol": "sym:demo_store.ui.CartSummary",
+      "tokens_used": []
+    },
+    {
+      "accessibility_findings": [
+        {
+          "message": "form view `CheckoutForm` should expose a `submit_label` prop for screen readers",
+          "severity": "info"
+        }
+      ],
+      "name": "CheckoutForm",
+      "props": [
+        {
+          "name": "cart",
+          "type": "Cart"
+        }
+      ],
+      "route": null,
+      "symbol": "sym:demo_store.ui.CheckoutForm",
+      "tokens_used": []
+    },
+    {
+      "accessibility_findings": [],
+      "name": "AdminProductEditor",
+      "props": [
+        {
+          "name": "product",
+          "type": "Product"
+        }
+      ],
+      "route": null,
+      "symbol": "sym:demo_store.ui.AdminProductEditor",
+      "tokens_used": []
+    }
+  ]
+}

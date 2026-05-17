@@ -1,0 +1,16 @@
+{
+  "schema": "ori.patch.v1",
+  "intent": "Add missing database error match arm",
+  "operations": [
+    {
+      "op": "insert_match_arm",
+      "target": "node:match:42",
+      "pattern": "Err(Db(err))",
+      "body": "render_db_error(err)"
+    }
+  ],
+  "tests": {
+    "run": ["ori test --changed"],
+    "expected": "pass"
+  }
+}

@@ -1,0 +1,25 @@
+// capsule: std.json — JSON value model with total parse and stringify functions.
+module std.json
+
+import core.result
+import core.list
+
+type Pair[K, V] = { key: K, value: V }
+
+type JsonValue =
+  | Null
+  | Bool(value: Bool)
+  | Number(value: Float)
+  | Str(value: Str)
+  | Array(items: List[JsonValue])
+  | Object(entries: List[Pair[Str, JsonValue]])
+
+type JsonError =
+  | SyntaxError(position: Int, message: Str)
+  | Truncated
+
+fn parse(input: Str) -> Result[JsonValue, JsonError]:
+  return Err(Truncated)
+
+fn stringify(value: JsonValue) -> Str:
+  return ""

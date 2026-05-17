@@ -1,0 +1,9 @@
+[package]
+name = "feed_aggregator"
+version = "0.1.0"
+edition = "2027.1"
+description = "Periodic feed aggregator example"
+license = "Apache-2.0"
+
+[capabilities]
+declared = ["http", "net.outbound", "db.read", "db.write", "time"]

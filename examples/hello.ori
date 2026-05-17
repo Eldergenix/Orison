@@ -1,0 +1,4 @@
+module hello
+
+fn main() -> Unit:
+  return Unit

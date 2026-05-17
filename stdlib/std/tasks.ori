@@ -1,0 +1,14 @@
+// capsule: std.tasks — typed task/future surface over the runtime scheduler (bootstrap stub)
+module std.tasks
+
+type Future[T]
+
+variant TaskError =
+  | Cancelled
+  | Timeout(after_ms: Int)
+  | Deadlock
+
+fn spawn_task(value: T) -> Future[T]
+fn join(future: Future[T]) -> Result[T, TaskError]
+fn select_first(futures: List[Future[T]]) -> Result[T, TaskError]
+fn with_timeout(future: Future[T], ms: Int) -> Result[T, TaskError] uses time

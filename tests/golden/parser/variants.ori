@@ -1,0 +1,6 @@
+module parser.variants
+
+type X =
+  | A
+  | B(payload: Int)
+  | C(label: Str, value: Int)

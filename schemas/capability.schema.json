@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.invalid/schemas/capability.schema.json",
+  "title": "Orison Capability Manifest v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "package",
+    "capabilities"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.capability_manifest.v1"
+    },
+    "package": {
+      "type": "string",
+      "minLength": 1
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "effects"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "effects": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "constraints": {
+            "type": "object"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

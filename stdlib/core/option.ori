@@ -1,0 +1,26 @@
+// capsule: core.option — Optional values that replace null with explicit cases.
+module core.option
+
+type Option[T] =
+  | None
+  | Some(value: T)
+
+fn unwrap_or[T](option: Option[T], default: T) -> T:
+  match option:
+    Some(value) => return value
+    None => return default
+
+fn map[T, U](option: Option[T], f: Fn(T) -> U) -> Option[U]:
+  match option:
+    Some(value) => return Some(f(value))
+    None => return None
+
+fn is_some[T](option: Option[T]) -> Bool:
+  match option:
+    Some(value) => return true
+    None => return false
+
+fn is_none[T](option: Option[T]) -> Bool:
+  match option:
+    Some(value) => return false
+    None => return true

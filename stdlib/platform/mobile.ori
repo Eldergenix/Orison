@@ -1,0 +1,14 @@
+// capsule: platform.mobile — mobile platform shims (bootstrap stub)
+module platform.mobile
+
+type Notification
+type Camera
+
+fn schedule_notification(title: Str, body: Str, at_unix_seconds: Int) -> Result[Notification, Str] uses time
+fn open_camera() -> Result[Camera, Str] uses ui
+
+variant DeviceOrientation =
+  | Portrait
+  | Landscape
+
+fn current_orientation() -> DeviceOrientation uses ui

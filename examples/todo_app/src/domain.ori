@@ -1,0 +1,19 @@
+// capsule: todo_app.domain — typed domain model for the todo example
+module todo_app.domain
+
+type TodoId wraps Str
+
+type Todo = {
+  id: TodoId,
+  title: Str,
+  done: Bool,
+  priority: Priority
+}
+
+type Priority =
+  | Low
+  | Normal
+  | High
+
+fn new_todo(id: TodoId, title: Str) -> Todo
+fn mark_done(todo: Todo) -> Todo

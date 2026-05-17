@@ -1,0 +1,14 @@
+// capsule: std.cache — typed in-process cache surface (bootstrap stub)
+module std.cache
+
+type Cache[K, V]
+
+variant CacheError =
+  | Full
+  | Evicted(key: K)
+
+fn new_cache(capacity: Int) -> Cache[K, V]
+fn put(cache: Cache[K, V], key: K, value: V) -> Result[Unit, CacheError]
+fn get(cache: Cache[K, V], key: K) -> Option[V]
+fn invalidate(cache: Cache[K, V], key: K) -> Unit
+fn len(cache: Cache[K, V]) -> Int

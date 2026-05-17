@@ -1,0 +1,9 @@
+[package]
+name = "blog"
+version = "0.1.0"
+edition = "2027.1"
+description = "Blog example for the Orison bootstrap toolchain"
+license = "Apache-2.0"
+
+[capabilities]
+declared = ["http", "db.read", "db.write", "auth"]

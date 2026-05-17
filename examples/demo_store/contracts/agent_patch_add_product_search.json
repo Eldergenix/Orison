@@ -1,0 +1,31 @@
+{
+  "schema": "ori.patch.v1",
+  "intent": "Add product search to the catalog module, extend CatalogError with a SearchUnavailable arm, and insert a search box into the ProductList view.",
+  "operations": [
+    {
+      "op": "insert_node",
+      "target": "sym:demo_store.catalog",
+      "position": "after:sym:demo_store.catalog.list_active",
+      "text": "fn search(query: Str) -> Result[List[Product], CatalogError] uses db.read:\n  return Ok([])\n"
+    },
+    {
+      "op": "insert_match_arm",
+      "target": "sym:demo_store.catalog.CatalogError",
+      "pattern": "SearchUnavailable",
+      "body": "SearchUnavailable"
+    },
+    {
+      "op": "insert_node",
+      "target": "sym:demo_store.ui.ProductList",
+      "position": "before:sym:demo_store.ui.ProductList.body",
+      "text": "form:\n  text_input(name: \"q\", label: \"Search products\")\n  button(label: \"Search\")\n"
+    }
+  ],
+  "tests": {
+    "run": [
+      "sym:demo_store.tests.store_smoke.test_get_product_not_found_returns_err",
+      "sym:demo_store.tests.store_smoke.test_cart_empty_total_is_zero"
+    ],
+    "expected": "pass"
+  }
+}

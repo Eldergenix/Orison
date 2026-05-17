@@ -1,0 +1,6 @@
+// capsule: feed_aggregator.main — periodic worker
+module feed_aggregator.main
+
+import feed_aggregator.api
+
+fn main() -> Unit uses http, net.outbound, db.read, db.write, time

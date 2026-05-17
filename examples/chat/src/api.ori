@@ -1,0 +1,16 @@
+// capsule: chat.api — typed routes for the chat example
+module chat.api
+
+import chat.domain
+
+service Chat uses http, db.read, db.write, net.inbound, net.outbound
+
+variant ChatError =
+  | RoomNotFound(room: RoomId)
+  | Forbidden
+  | RateLimited(retry_after_seconds: Int)
+
+fn get_room_messages(room: RoomId) -> Result[List[Message], ChatError] uses http, db.read
+fn post_message(room: RoomId, message: Message) -> Result[Message, ChatError] uses http, db.write
+fn subscribe_room(room: RoomId) -> Result[Unit, ChatError] uses net.inbound
+fn prune_old_messages(room: RoomId, older_than_unix_seconds: Int) -> Result[Int, ChatError] uses http, db.write, auth

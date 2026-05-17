@@ -1,0 +1,5 @@
+module bad.null_example
+
+fn main() -> Unit:
+  let user = null
+  return Unit

@@ -1,0 +1,49 @@
+[package]
+name = "ori-pkg"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+ori-compiler = { path = "../ori-compiler" }
+
+[lib]
+path = "src/lib.rs"
+
+[[test]]
+name = "manifest_roundtrip"
+path = "tests/manifest_roundtrip.rs"
+
+[[test]]
+name = "manifest_errors"
+path = "tests/manifest_errors.rs"
+
+[[test]]
+name = "lockfile_deterministic"
+path = "tests/lockfile_deterministic.rs"
+
+[[test]]
+name = "resolver_cycle"
+path = "tests/resolver_cycle.rs"
+
+[[test]]
+name = "audit_capability_diff"
+path = "tests/audit_capability_diff.rs"
+
+[[test]]
+name = "capability_bypass"
+path = "tests/capability_bypass.rs"
+
+[[test]]
+name = "lockfile_tamper"
+path = "tests/lockfile_tamper.rs"
+
+[[test]]
+name = "sbom_schema"
+path = "tests/sbom_schema.rs"
+
+[[test]]
+name = "provenance_failure"
+path = "tests/provenance_failure.rs"

@@ -1,0 +1,16 @@
+// capsule: feed_aggregator.api — HTTP routes
+module feed_aggregator.api
+
+import feed_aggregator.domain
+
+service Feeds uses http, db.read, db.write
+
+variant FeedError =
+  | NotFound(id: FeedId)
+  | InvalidUrl(url: FeedUrl)
+  | UpstreamFailed(reason: Str)
+
+fn get_feeds() -> List[Feed] uses http, db.read
+fn create_feed(url: FeedUrl) -> Result[Feed, FeedError] uses http, db.write
+fn get_entries(feed: FeedId) -> List[Entry] uses http, db.read
+fn fetch_now(feed: FeedId) -> Result[FeedStatus, FeedError] uses http, net.outbound, db.write

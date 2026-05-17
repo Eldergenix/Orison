@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.dev/schemas/build-report.schema.json",
+  "title": "Orison Build Report v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "package",
+    "target",
+    "duration_ms",
+    "units_compiled",
+    "cached_units",
+    "errors",
+    "warnings",
+    "outputs"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.build_report.v1"
+    },
+    "package": {
+      "type": "string",
+      "minLength": 1
+    },
+    "target": {
+      "enum": [
+        "dev",
+        "release",
+        "wasm-component",
+        "web",
+        "mobile"
+      ]
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "units_compiled": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "cached_units": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "errors": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "warnings": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "outputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "path",
+          "bytes"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.build_report.v1",
+      "package": "app.users",
+      "target": "release",
+      "duration_ms": 4321,
+      "units_compiled": 18,
+      "cached_units": 27,
+      "errors": 0,
+      "warnings": 1,
+      "outputs": [
+        {
+          "kind": "binary",
+          "path": "target/release/app-users",
+          "bytes": 1048576
+        },
+        {
+          "kind": "capsule",
+          "path": "target/release/app-users.capsule.json",
+          "bytes": 4096
+        }
+      ]
+    }
+  ]
+}

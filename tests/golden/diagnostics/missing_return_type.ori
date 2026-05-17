@@ -1,0 +1,4 @@
+module diag.missing_return
+
+fn do_thing():
+  return Unit

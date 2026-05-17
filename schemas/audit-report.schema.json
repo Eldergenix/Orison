@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.dev/schemas/audit-report.schema.json",
+  "title": "Orison Audit Report v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "summary",
+    "findings"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.audit_report.v1"
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "pass",
+        "warn",
+        "fail"
+      ],
+      "properties": {
+        "pass": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "warn": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fail": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "severity",
+          "message",
+          "target",
+          "fix_hint"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "warn",
+              "error"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1
+          },
+          "fix_hint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.audit_report.v1",
+      "summary": {
+        "pass": 12,
+        "warn": 2,
+        "fail": 1
+      },
+      "findings": [
+        {
+          "id": "AUD0001",
+          "severity": "error",
+          "message": "Unapproved ambient capability 'net.fetch' detected",
+          "target": "sym:app.users.fetch_user",
+          "fix_hint": "Declare 'net.fetch' in ori.toml capabilities"
+        },
+        {
+          "id": "AUD0002",
+          "severity": "warn",
+          "message": "Dependency 'legacy.utils' has no license",
+          "target": "package:legacy.utils@0.0.3",
+          "fix_hint": null
+        }
+      ]
+    }
+  ]
+}

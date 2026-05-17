@@ -1,0 +1,13 @@
+module demo_store.main
+
+// Application entry point.
+//
+// `boot` wires the typed HTTP service and the typed UI surface into a
+// running application. Effects are declared explicitly so the runtime
+// can audit which capabilities the process actually needs.
+
+import demo_store.api
+import demo_store.ui
+
+fn boot() -> Unit uses http, ui, db.read, db.write:
+  return Unit

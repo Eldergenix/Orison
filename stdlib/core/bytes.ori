@@ -1,0 +1,15 @@
+// capsule: core.bytes — Immutable byte sequence type and conversions.
+module core.bytes
+
+import core.result
+
+type Bytes
+
+fn from_string(s: Str) -> Bytes:
+  return Bytes.empty()
+
+fn to_string(b: Bytes) -> Result[Str, Str]:
+  return Ok("")
+
+fn len(b: Bytes) -> Int:
+  return 0

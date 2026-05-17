@@ -1,0 +1,11 @@
+// capsule: app.views — Declarative UI view primitives backed by the `ui` effect.
+// NOTE: module is `app.views` (plural) because `view` is a reserved keyword in
+// the bootstrap grammar and would otherwise fail to parse as a module path.
+module app.views
+
+type View
+
+type Props
+
+fn declare_view(name: Str) -> View uses ui:
+  return View.empty()

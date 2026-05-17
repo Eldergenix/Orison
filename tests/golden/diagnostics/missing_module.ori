@@ -1,0 +1,3 @@
+// Intentionally has no `module` declaration -> E0001
+fn hello() -> Unit:
+  return Unit

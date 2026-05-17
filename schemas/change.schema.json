@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.invalid/schemas/change.schema.json",
+  "title": "Orison Change Manifest v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "intent",
+    "public_api_changed",
+    "security_relevant",
+    "capabilities_added",
+    "tests_added"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.change.v1"
+    },
+    "intent": {
+      "type": "string",
+      "minLength": 1
+    },
+    "public_api_changed": {
+      "type": "boolean"
+    },
+    "security_relevant": {
+      "type": "boolean"
+    },
+    "capabilities_added": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "tests_added": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "expected_diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}

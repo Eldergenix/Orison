@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.dev/schemas/lockfile.schema.json",
+  "title": "Orison Lockfile v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "format_version",
+    "packages"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.lockfile.v1"
+    },
+    "format_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "packages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "version",
+          "source",
+          "checksum",
+          "capabilities",
+          "dependencies"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1
+          },
+          "checksum": {
+            "type": "string",
+            "pattern": "^[0-9a-f]+$"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.lockfile.v1",
+      "format_version": 1,
+      "packages": [
+        {
+          "name": "std.io",
+          "version": "0.1.0",
+          "source": "registry+https://orison.dev/registry",
+          "checksum": "deadbeefcafebabe0123456789abcdef",
+          "capabilities": [
+            "fs.read"
+          ],
+          "dependencies": []
+        },
+        {
+          "name": "app.users",
+          "version": "0.2.1",
+          "source": "path+./crates/users",
+          "checksum": "0123456789abcdef0123456789abcdef",
+          "capabilities": [
+            "net.fetch",
+            "fs.read"
+          ],
+          "dependencies": [
+            "std.io"
+          ]
+        }
+      ]
+    }
+  ]
+}

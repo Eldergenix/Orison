@@ -1,0 +1,4 @@
+module parser.hello
+
+fn greet() -> Str:
+  return "hello"

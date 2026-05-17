@@ -1,0 +1,24 @@
+// capsule: std.sql — Typed SQL connection, query plan, and row primitives.
+module std.sql
+
+import core.result
+import core.list
+
+type Connection
+
+type Query[T]
+
+type Row
+
+type SqlError =
+  | Syntax(message: Str)
+  | Connection(reason: Str)
+  | Constraint(reason: Str)
+
+fn connect(url: Str) -> Result[Connection, SqlError] uses db.read, db.write:
+  return Err(Connection("not implemented"))
+
+// `query` is a reserved keyword in the bootstrap grammar; this entrypoint is
+// named `execute` instead so the public surface remains parseable today.
+fn execute(connection: Connection, sql: Str) -> Result[List[Row], SqlError] uses db.read:
+  return Err(Connection("not implemented"))

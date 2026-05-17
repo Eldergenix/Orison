@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.invalid/schemas/migration-report.schema.json",
+  "title": "Orison Migration Report v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "from",
+    "to",
+    "candidates",
+    "applied"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.migration_report.v1"
+    },
+    "from": {
+      "type": "string",
+      "minLength": 1
+    },
+    "to": {
+      "type": "string",
+      "minLength": 1
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/candidate"
+      }
+    },
+    "applied": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "candidate": {
+      "type": "object",
+      "required": [
+        "kind",
+        "target",
+        "from_form",
+        "to_form",
+        "rationale"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "rename_keyword",
+            "deprecate_effect",
+            "rename_module",
+            "unsupported_edition"
+          ]
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "from_form": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to_form": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "examples": [
+    {
+      "schema": "ori.migration_report.v1",
+      "from": "2027.1",
+      "to": "2028.1",
+      "applied": false,
+      "candidates": [
+        {
+          "kind": "deprecate_effect",
+          "target": "sym:app.service.write_log",
+          "from_form": "uses fs",
+          "to_form": "uses fs.read, fs.write",
+          "rationale": "coarse `fs` effect was split into `fs.read` and `fs.write`; declare only the narrower effect actually used"
+        },
+        {
+          "kind": "rename_module",
+          "target": "mod:app.service",
+          "from_form": "module app.service",
+          "to_form": "module app.services",
+          "rationale": "module `app.service` was renamed to plural `app.services` for consistency with other domain layers"
+        }
+      ]
+    }
+  ]
+}

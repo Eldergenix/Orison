@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.invalid/schemas/manifest.schema.json",
+  "title": "Orison Package Manifest v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "package",
+    "edition",
+    "version"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.manifest.v1"
+    },
+    "package": {
+      "type": "string",
+      "minLength": 1
+    },
+    "edition": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "capabilities": {
+      "type": "object"
+    },
+    "dependencies": {
+      "type": "object"
+    },
+    "targets": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}

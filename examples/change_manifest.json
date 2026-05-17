@@ -1,0 +1,9 @@
+{
+  "schema": "ori.change.v1",
+  "intent": "Add user fetch route",
+  "public_api_changed": true,
+  "security_relevant": false,
+  "capabilities_added": ["db.read"],
+  "tests_added": ["test:store.users.fetch_user.not_found"],
+  "expected_diagnostics": []
+}

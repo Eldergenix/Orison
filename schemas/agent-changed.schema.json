@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.dev/schemas/agent-changed.schema.json",
+  "title": "Orison Agent Changed Symbols v1",
+  "description": "Per-symbol incremental change report emitted by `ori agent changed`. Each run compares the parsed symbol fingerprints under <path> against the previously persisted table (default: <path>/.ori/fingerprints.json or the file passed via --prev) and reports added, modified, removed, and one-hop-invalidated downstream modules. Fingerprints are FNV-1a over (id, kind, normalized signature, sorted effects).",
+  "type": "object",
+  "required": [
+    "schema",
+    "added",
+    "modified",
+    "removed",
+    "dependents",
+    "notes"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.agent_changed.v1",
+      "description": "Schema identifier. Must equal `ori.agent_changed.v1`."
+    },
+    "added": {
+      "type": "array",
+      "description": "Sorted list of canonical symbol ids that are present in the current run but were absent from the previous fingerprint table.",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "modified": {
+      "type": "array",
+      "description": "Sorted list of canonical symbol ids whose fingerprint differs from the previous run. A signature or effect-set change shows up here; renames look like one removed id plus one added id.",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "removed": {
+      "type": "array",
+      "description": "Sorted list of canonical symbol ids that were in the previous fingerprint table but are no longer produced by the current run.",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "dependents": {
+      "type": "array",
+      "description": "Sorted list of module names that import a module containing at least one added or modified symbol. One-hop propagation only; see the query engine docs for the multi-hop roadmap.",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "notes": {
+      "type": "array",
+      "description": "Human-readable, non-fatal notes recorded during this run. The CLI surfaces missing or unreadable previous-fingerprint files here rather than failing.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.agent_changed.v1",
+      "added": [
+        "sym:demo_store.cart.add_item"
+      ],
+      "modified": [
+        "sym:demo_store.api.handle"
+      ],
+      "removed": [],
+      "dependents": [
+        "demo_store.main"
+      ],
+      "notes": []
+    },
+    {
+      "schema": "ori.agent_changed.v1",
+      "added": [
+        "sym:demo_store.api.handle",
+        "sym:demo_store.cart.add_item",
+        "sym:demo_store.catalog.list_products",
+        "sym:demo_store.domain.Money",
+        "sym:demo_store.main.boot",
+        "sym:demo_store.ui.render"
+      ],
+      "modified": [],
+      "removed": [],
+      "dependents": [],
+      "notes": [
+        "previous fingerprints file `examples/demo_store/src/.ori/fingerprints.json` was unreadable (No such file or directory (os error 2)); treating all symbols as new"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.invalid/schemas/agent-map.schema.json",
+  "title": "Orison Agent Map v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "module",
+    "budget",
+    "used_estimate",
+    "truncated",
+    "imports",
+    "symbols",
+    "diagnostic_count",
+    "error_count",
+    "warning_count"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.agent_map.v1"
+    },
+    "module": {
+      "type": "string",
+      "minLength": 1
+    },
+    "budget": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "used_estimate": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "imports": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "symbols": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/symbol"
+      }
+    },
+    "diagnostic_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "error_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "warning_count": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "symbol": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "name",
+        "signature",
+        "effects"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1
+        },
+        "effects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

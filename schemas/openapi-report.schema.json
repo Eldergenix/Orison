@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.dev/schemas/openapi-report.schema.json",
+  "title": "Orison OpenAPI Report v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "services",
+    "routes",
+    "openapi_version"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.openapi_report.v1"
+    },
+    "services": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "routes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "method",
+          "path",
+          "handler_symbol",
+          "params",
+          "request_body_type",
+          "response_type",
+          "effects"
+        ],
+        "properties": {
+          "method": {
+            "enum": [
+              "GET",
+              "POST",
+              "PUT",
+              "PATCH",
+              "DELETE"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "handler_symbol": {
+            "type": "string",
+            "minLength": 1
+          },
+          "params": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "in",
+                "type",
+                "required"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "in": {
+                  "enum": [
+                    "query",
+                    "path",
+                    "header",
+                    "cookie"
+                  ]
+                },
+                "type": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "required": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "request_body_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "response_type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "effects": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "openapi_version": {
+      "const": "3.1.0"
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.openapi_report.v1",
+      "services": [
+        "users-service"
+      ],
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/users/{id}",
+          "handler_symbol": "sym:api.users.get_user",
+          "params": [
+            {
+              "name": "id",
+              "in": "path",
+              "type": "string",
+              "required": true
+            }
+          ],
+          "request_body_type": null,
+          "response_type": "User",
+          "effects": [
+            "db.read"
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/users",
+          "handler_symbol": "sym:api.users.create_user",
+          "params": [],
+          "request_body_type": "CreateUserInput",
+          "response_type": "User",
+          "effects": [
+            "db.write"
+          ]
+        }
+      ],
+      "openapi_version": "3.1.0"
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.dev/schemas/rpc-import.schema.json",
+  "title": "Orison RPC Import Report v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "package",
+    "messages",
+    "services",
+    "rpcs"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.rpc_import.v1"
+    },
+    "package": {
+      "type": "string"
+    },
+    "messages": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "services": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "rpcs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "file": {
+      "type": "string"
+    },
+    "module": {
+      "type": "string"
+    },
+    "orison": {
+      "type": "string"
+    },
+    "error_code": {
+      "type": "string"
+    },
+    "error_message": {
+      "type": "string"
+    },
+    "line": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.rpc_import.v1",
+      "package": "demo.v1",
+      "messages": 2,
+      "services": 1,
+      "rpcs": 2
+    }
+  ]
+}

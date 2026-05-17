@@ -1,0 +1,59 @@
+{
+  "openapi_version": "3.1.0",
+  "routes": [
+    {
+      "effects": [
+        "http",
+        "db.read"
+      ],
+      "handler_symbol": "sym:demo_store.api.get_products",
+      "method": "GET",
+      "params": [],
+      "path": "/products",
+      "request_body_type": null,
+      "response_type": "List[Product]"
+    },
+    {
+      "effects": [
+        "http",
+        "db.read"
+      ],
+      "handler_symbol": "sym:demo_store.api.get_product",
+      "method": "GET",
+      "params": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "type": "ProductId"
+        }
+      ],
+      "path": "/product",
+      "request_body_type": null,
+      "response_type": "Result[Product, CatalogError]"
+    },
+    {
+      "effects": [
+        "http",
+        "db.write"
+      ],
+      "handler_symbol": "sym:demo_store.api.post_checkout",
+      "method": "POST",
+      "params": [
+        {
+          "in": "path",
+          "name": "cart",
+          "required": true,
+          "type": "Cart"
+        }
+      ],
+      "path": "/checkout",
+      "request_body_type": null,
+      "response_type": "Result[Order, CheckoutError]"
+    }
+  ],
+  "schema": "ori.openapi_report.v1",
+  "services": [
+    "Storefront"
+  ]
+}

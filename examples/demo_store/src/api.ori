@@ -1,0 +1,27 @@
+module demo_store.api
+
+// Typed HTTP surface for the Demo Storefront.
+//
+// Routes are declared as plain functions so the current bootstrap parser
+// can index them as symbols. Each route carries explicit effects and a
+// total return type so capabilities and contracts are auditable.
+
+import demo_store.domain
+import demo_store.catalog
+import demo_store.cart
+
+type CheckoutError =
+  | CartInvalid(reason: CartError)
+  | PaymentFailed
+  | InventoryConflict
+
+service Storefront uses http, db.read, db.write
+
+fn get_products() -> List[Product] uses http, db.read:
+  return list_active()
+
+fn get_product(id: ProductId) -> Result[Product, CatalogError] uses http, db.read:
+  return fetch_product(id)
+
+fn post_checkout(cart: Cart) -> Result[Order, CheckoutError] uses http, db.write:
+  return Err(PaymentFailed)

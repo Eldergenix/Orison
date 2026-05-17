@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.invalid/schemas/symbol-card.schema.json",
+  "title": "Orison Symbol Card v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "found",
+    "module"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.symbol_card.v1"
+    },
+    "found": {
+      "type": "boolean"
+    },
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "signature": {
+      "type": "string"
+    },
+    "effects": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "source_span": {
+      "type": "object",
+      "required": [
+        "file",
+        "start_line",
+        "end_line"
+      ],
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "start_line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "end_line": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "summary": {
+      "type": "string"
+    },
+    "query": {
+      "type": "string"
+    },
+    "module": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

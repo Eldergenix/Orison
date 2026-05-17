@@ -1,0 +1,79 @@
+(* Orison grammar draft. This is a target grammar, not yet fully implemented. *)
+
+source_file     = module_decl, newline, { import_decl | declaration | newline } ;
+
+module_decl     = "module", module_name ;
+module_name     = ident, { ".", ident } ;
+
+import_decl     = "import", module_name, [ "as", ident ] ;
+
+declaration     = type_decl
+                | fn_decl
+                | protocol_decl
+                | impl_decl
+                | service_decl
+                | view_decl
+                | actor_decl
+                | query_decl
+                | migration_decl
+                | capability_decl
+                | extern_decl ;
+
+type_decl       = "type", type_name, ( record_type | variant_type | wrap_type | alias_type ) ;
+record_type     = "=", "{", field_list, "}" ;
+variant_type    = "=", variant_arm, { newline, variant_arm } ;
+wrap_type       = "wraps", type_expr ;
+alias_type      = "=", type_expr ;
+variant_arm     = "|", ident, [ "(", param_list, ")" ] ;
+field_list      = field, { ",", field }, [ "," ] ;
+field           = ident, ":", type_expr ;
+
+fn_decl         = "fn", ident, generic_params?, "(", param_list?, ")", "->", type_expr, effects?, ":", block ;
+param_list      = param, { ",", param } ;
+param           = ident, ":", type_expr ;
+generic_params  = "[", ident, { ",", ident }, "]" ;
+effects         = "uses", effect_name, { ",", effect_name } ;
+effect_name     = ident, { ".", ident } ;
+
+type_expr       = ident, [ "[", type_expr, { ",", type_expr }, "]" ]
+                | "borrow", type_expr
+                | "mut", type_expr ;
+
+protocol_decl   = "protocol", ident, generic_params?, ":", block ;
+impl_decl       = "impl", type_expr, ":", block ;
+
+service_decl    = "service", ident, effects?, ":", service_block ;
+service_block   = indent, { route_decl }, dedent ;
+route_decl      = http_method, string, [ "body", type_expr ], "->", type_expr, effects?, ":", block ;
+http_method     = "get" | "post" | "put" | "patch" | "delete" ;
+
+view_decl       = "view", ident, "(", param_list?, ")", "->", type_expr, effects?, ":", block ;
+actor_decl      = "actor", ident, ":", block ;
+query_decl      = "query", ident, "(", param_list?, ")", "->", type_expr, ":", query_body ;
+migration_decl  = "migration", ident, ":", block ;
+capability_decl = "capability", ident, ":", block ;
+extern_decl     = "extern", ident, ":", block ;
+
+block           = indent, { statement }, dedent ;
+statement       = let_stmt | var_stmt | return_stmt | expr_stmt | match_stmt | if_stmt | for_stmt | while_stmt ;
+let_stmt        = "let", ident, [ ":", type_expr ], "=", expr ;
+var_stmt        = "var", ident, [ ":", type_expr ], "=", expr ;
+return_stmt     = "return", [ expr ] ;
+expr_stmt       = expr ;
+
+expr            = literal | ident | call_expr | record_expr | match_expr | if_expr | field_expr | binary_expr ;
+literal         = string | number | "true" | "false" | "Unit" ;
+call_expr       = expr, "(", arg_list?, ")" ;
+arg_list        = expr, { ",", expr } ;
+field_expr      = expr, ".", ident ;
+record_expr     = ident, "(", named_arg_list?, ")" ;
+named_arg_list  = named_arg, { ",", named_arg } ;
+named_arg       = ident, ":", expr ;
+
+ident           = ? Unicode identifier, normalized ? ;
+string          = ? UTF-8 string literal ? ;
+number          = ? integer or float literal ? ;
+newline         = ? line break ? ;
+indent          = ? increased indentation token ? ;
+dedent          = ? decreased indentation token ? ;
+query_body      = ? query DSL body, parsed by query grammar ? ;

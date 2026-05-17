@@ -1,0 +1,12 @@
+// capsule: todo_app.api — typed HTTP routes for the todo app
+module todo_app.api
+
+import todo_app.domain
+import todo_app.storage
+
+service Todos uses http, db.read, db.write
+
+fn get_todos() -> List[Todo] uses http, db.read
+fn get_todo(id: TodoId) -> Result[Todo, StorageError] uses http, db.read
+fn create_todo(todo: Todo) -> Result[Todo, StorageError] uses http, db.write
+fn delete_todo(id: TodoId) -> Result[Unit, StorageError] uses http, db.write

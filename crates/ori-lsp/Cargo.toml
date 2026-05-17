@@ -1,0 +1,13 @@
+[package]
+name = "ori-lsp"
+version = "0.1.1"
+edition = "2021"
+rust-version = "1.75"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+ori-compiler = { path = "../ori-compiler" }
+
+[lib]
+path = "src/lib.rs"

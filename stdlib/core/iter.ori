@@ -1,0 +1,22 @@
+// capsule: core.iter — Lazy iterator primitives used across collections and streams.
+module core.iter
+
+import core.option
+import core.list
+
+type Iter[T]
+
+fn next[T](iter: Iter[T]) -> Option[T]:
+  return None
+
+fn map[T, U](iter: Iter[T], f: Fn(T) -> U) -> Iter[U]:
+  return iter
+
+fn filter[T](iter: Iter[T], pred: Fn(T) -> Bool) -> Iter[T]:
+  return iter
+
+fn collect_list[T](iter: Iter[T]) -> List[T]:
+  return List.empty()
+
+fn count[T](iter: Iter[T]) -> Int:
+  return 0

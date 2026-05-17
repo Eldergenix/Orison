@@ -1,0 +1,10 @@
+// capsule: counter.main — single-view counter demo
+module counter.main
+
+type Count wraps Int
+
+view Counter(count: Count) uses ui
+
+fn increment(count: Count) -> Count
+fn decrement(count: Count) -> Count
+fn main() -> Unit uses ui

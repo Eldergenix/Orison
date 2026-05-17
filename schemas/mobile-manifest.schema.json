@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.dev/schemas/mobile-manifest.schema.json",
+  "title": "Orison Mobile Manifest v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "app_id",
+    "platforms",
+    "permissions",
+    "capabilities",
+    "entrypoints"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.mobile_manifest.v1"
+    },
+    "app_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "platforms": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "ios",
+          "android"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "permissions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "key",
+          "justification"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "justification": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "entrypoints": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.mobile_manifest.v1",
+      "app_id": "dev.orison.example.users",
+      "platforms": [
+        "ios",
+        "android"
+      ],
+      "permissions": [
+        {
+          "key": "ios.NSCameraUsageDescription",
+          "justification": "Scan profile photos for user accounts"
+        },
+        {
+          "key": "android.permission.INTERNET",
+          "justification": "Fetch user records from API"
+        }
+      ],
+      "capabilities": [
+        "net.fetch",
+        "fs.read"
+      ],
+      "entrypoints": [
+        "sym:app.mobile.main",
+        "sym:app.mobile.notifications.handle"
+      ]
+    }
+  ]
+}

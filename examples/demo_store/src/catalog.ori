@@ -1,0 +1,23 @@
+module demo_store.catalog
+
+// Catalog reads and the migration that backs product search.
+//
+// All catalog reads are pure data fetches over the `db.read` effect.
+// Failure is encoded explicitly via the CatalogError variant; callers
+// must handle each arm.
+
+import demo_store.domain
+
+type CatalogError =
+  | NotFound
+  | Unavailable
+
+fn fetch_product(id: ProductId) -> Result[Product, CatalogError] uses db.read:
+  return Err(NotFound)
+
+fn list_active() -> List[Product] uses db.read:
+  return []
+
+migration add_product_search:
+  up "CREATE INDEX products_name_trgm ON products USING gin (name gin_trgm_ops)"
+  down "DROP INDEX IF EXISTS products_name_trgm"

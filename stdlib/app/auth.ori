@@ -1,0 +1,15 @@
+// capsule: app.auth — Session and principal extraction gated by the `auth` effect.
+module app.auth
+
+import core.result
+
+type Session
+
+type Principal
+
+type AuthError =
+  | Unauthenticated
+  | Forbidden
+
+fn require_principal(session: Session) -> Result[Principal, AuthError] uses auth:
+  return Err(Unauthenticated)

@@ -1,0 +1,6 @@
+// capsule: todo_app.main — boot entrypoint
+module todo_app.main
+
+import todo_app.api
+
+fn main() -> Unit uses http, db.read, db.write

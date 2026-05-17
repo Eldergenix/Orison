@@ -1,0 +1,16 @@
+// capsule: core.numeric — numeric utilities (bootstrap stub)
+module core.numeric
+
+fn abs(value: Int) -> Int
+fn min(a: Int, b: Int) -> Int
+fn max(a: Int, b: Int) -> Int
+fn clamp(value: Int, low: Int, high: Int) -> Int
+fn pow(base: Int, exp: Int) -> Int
+
+variant NumericError =
+  | DivisionByZero
+  | Overflow
+  | Underflow
+
+fn safe_div(numerator: Int, denominator: Int) -> Result[Int, NumericError]
+fn safe_mul(a: Int, b: Int) -> Result[Int, NumericError]

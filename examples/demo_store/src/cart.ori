@@ -1,0 +1,26 @@
+module demo_store.cart
+
+// Cart operations are pure transformations on the Cart record.
+// They take no effects so they can be reused on the server, in tests,
+// and inside UI views without re-declaring authority.
+
+import demo_store.domain
+
+type CartError =
+  | Empty
+  | StockExceeded(product_id: ProductId, available: Int)
+
+fn add_line(cart: Cart, line: CartLine) -> Cart:
+  return Cart { customer: cart.customer, lines: cart.lines.append(line) }
+
+fn remove_line(cart: Cart, product_id: ProductId) -> Cart:
+  let kept = cart.lines.without_product(product_id)
+  return Cart { customer: cart.customer, lines: kept }
+
+fn total(cart: Cart) -> Money:
+  return money_zero()
+
+fn validate(cart: Cart) -> Result[Cart, CartError]:
+  if cart.lines.is_empty():
+    return Err(Empty)
+  return Ok(cart)

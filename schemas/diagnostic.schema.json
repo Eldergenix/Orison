@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.invalid/schemas/diagnostic.schema.json",
+  "title": "Orison Diagnostic v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "id",
+    "level",
+    "message",
+    "span",
+    "expected",
+    "found",
+    "fixes",
+    "agent"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.diagnostic.v1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Z][0-9]{4}$|^P[0-9]{4}$"
+    },
+    "level": {
+      "enum": [
+        "error",
+        "warning",
+        "info"
+      ]
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1
+    },
+    "span": {
+      "$ref": "#/$defs/span"
+    },
+    "symbol": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "expected": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "found": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "fixes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/fix"
+      }
+    },
+    "agent": {
+      "$ref": "#/$defs/agent"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "position": {
+      "type": "object",
+      "required": [
+        "line",
+        "column"
+      ],
+      "properties": {
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "span": {
+      "type": "object",
+      "required": [
+        "file",
+        "start",
+        "end"
+      ],
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "start": {
+          "$ref": "#/$defs/position"
+        },
+        "end": {
+          "$ref": "#/$defs/position"
+        }
+      },
+      "additionalProperties": false
+    },
+    "fix": {
+      "type": "object",
+      "required": [
+        "kind",
+        "description",
+        "confidence"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "patch": {}
+      },
+      "additionalProperties": false
+    },
+    "agent": {
+      "type": "object",
+      "required": [
+        "summary",
+        "minimal_context",
+        "docs"
+      ],
+      "properties": {
+        "summary": {
+          "type": "string"
+        },
+        "minimal_context": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "docs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

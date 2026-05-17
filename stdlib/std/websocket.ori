@@ -1,0 +1,19 @@
+// capsule: std.websocket — typed websocket surface (bootstrap stub)
+module std.websocket
+
+type Socket
+
+variant WsMessage =
+  | Text(payload: Str)
+  | Binary(payload: Bytes)
+  | Close(code: Int, reason: Str)
+
+variant WsError =
+  | NotConnected
+  | InvalidFrame(reason: Str)
+  | Network(reason: Str)
+
+fn connect(url: Str) -> Result[Socket, WsError] uses net.outbound
+fn send(socket: Socket, message: WsMessage) -> Result[Unit, WsError] uses net.outbound
+fn recv(socket: Socket) -> Result[WsMessage, WsError] uses net.inbound
+fn close(socket: Socket, code: Int, reason: Str) -> Result[Unit, WsError] uses net.outbound
