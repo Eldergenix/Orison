@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ori.model_loop_telemetry.v1",
+  "title": "Orison Model-in-Loop Telemetry v1",
+  "description": "Telemetry envelope emitted by `ori agent telemetry`. Captures the per-iteration accounting of a model-in-loop edit session: edits proposed/accepted/rejected, token in/out counts, remaining budget, and the diagnostic delta. Totals are recomputed by the consumer so callers cannot smuggle inconsistent aggregates.",
+  "type": "object",
+  "required": [
+    "schema",
+    "session_id",
+    "model_id",
+    "iterations",
+    "totals"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.model_loop_telemetry.v1"
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "model_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "iterations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/iteration"
+      }
+    },
+    "totals": {
+      "$ref": "#/$defs/totals"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "iteration": {
+      "type": "object",
+      "required": [
+        "iteration",
+        "started_at",
+        "completed_at",
+        "edits_proposed",
+        "edits_accepted",
+        "edits_rejected",
+        "tokens_in",
+        "tokens_out",
+        "budget_remaining",
+        "diagnostics_before",
+        "diagnostics_after"
+      ],
+      "properties": {
+        "iteration": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "started_at": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completed_at": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "edits_proposed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "edits_accepted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "edits_rejected": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tokens_in": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tokens_out": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "budget_remaining": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "diagnostics_before": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "diagnostics_after": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "totals": {
+      "type": "object",
+      "required": [
+        "iterations",
+        "wall_ms",
+        "edits_proposed",
+        "edits_accepted",
+        "edits_rejected",
+        "tokens_in",
+        "tokens_out",
+        "diagnostics_resolved"
+      ],
+      "properties": {
+        "iterations": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "wall_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "edits_proposed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "edits_accepted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "edits_rejected": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tokens_in": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tokens_out": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "diagnostics_resolved": {
+          "type": "integer",
+          "description": "Signed; negative means the session added more diagnostics than it resolved."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "examples": [
+    {
+      "schema": "ori.model_loop_telemetry.v1",
+      "session_id": "edit-session-2026-05-17-001",
+      "model_id": "claude-opus-4-7",
+      "iterations": [
+        {
+          "iteration": 1,
+          "started_at": 0,
+          "completed_at": 1500,
+          "edits_proposed": 6,
+          "edits_accepted": 6,
+          "edits_rejected": 0,
+          "tokens_in": 2048,
+          "tokens_out": 512,
+          "budget_remaining": 7440,
+          "diagnostics_before": 4,
+          "diagnostics_after": 0
+        }
+      ],
+      "totals": {
+        "iterations": 1,
+        "wall_ms": 1500,
+        "edits_proposed": 6,
+        "edits_accepted": 6,
+        "edits_rejected": 0,
+        "tokens_in": 2048,
+        "tokens_out": 512,
+        "diagnostics_resolved": 4
+      }
+    }
+  ]
+}

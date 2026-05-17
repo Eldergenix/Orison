@@ -24,8 +24,11 @@ pub mod manifest;
 pub mod provenance;
 pub mod registry;
 pub mod resolver;
+pub mod sandbox;
 pub mod sbom;
 pub mod toml_lite;
+pub mod version;
+pub mod version_solver;
 
 pub use audit::{run_audit, AuditFinding, AuditReport, AuditSeverity, AuditSummary};
 pub use error::PkgError;
@@ -39,5 +42,15 @@ pub use registry::{
     REGISTRY_INDEX_SCHEMA, REGISTRY_LIST_SCHEMA,
 };
 pub use resolver::{resolve, ResolveError, ResolveErrorKind, ResolvedGraph, ResolvedNode};
+pub use sandbox::{
+    check_env_read, check_fs_read, check_fs_write, check_network, default_policy, path_allowed,
+    run_in_sandbox, validate_policy, PolicyViolation, SandboxError, SandboxPolicy, SandboxResult,
+    DEFAULT_TIMEOUT_SECONDS, SANDBOX_RESULT_SCHEMA,
+};
 pub use sbom::{build_sbom, Sbom, SbomComponent, SbomFormat};
 pub use toml_lite::{parse_manifest, TomlError, TomlErrorKind, TomlValue};
+pub use version::{
+    caret_upper_bound, parse_constraint, parse_version, satisfies, tilde_upper_bound, Version,
+    VersionConstraint, VersionError,
+};
+pub use version_solver::{solve, DependencyGraph, PackageId, SolverError};

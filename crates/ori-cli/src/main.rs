@@ -1,10 +1,15 @@
 use ori_agent::{
     agent_diagnose_json, agent_map_json, agent_symbol_list_json, doctor_report_json,
-    explain_symbol_json, AgentMapOptions,
+    explain_symbol_json, parse_telemetry_json, telemetry_json, AgentMapOptions,
 };
 use ori_compiler::ast::Module;
+use ori_compiler::ast::SymbolKind;
+use ori_compiler::backend_dispatch::{build_dispatch_table, dispatch_report_json};
 use ori_compiler::bench::run_default_suite;
 use ori_compiler::body::parse_module_bodies;
+use ori_compiler::capability_runtime::{
+    guard_call_at, guard_report_json, CallContext, CapabilitySet, CapabilityToken,
+};
 use ori_compiler::codegen_text::emit_textual_ir;
 use ori_compiler::coverage::coverage_for_files;
 use ori_compiler::design_tokens::{
@@ -24,7 +29,8 @@ use ori_compiler::json::to_json;
 use ori_compiler::migrate::{plan_migration, unsupported_edition_error};
 use ori_compiler::migration_graph::build_migration_report;
 use ori_compiler::mir::lower_module as lower_mir;
-use ori_compiler::mobile::{build_mobile_manifest, validate_manifest, SUPPORTED_PLATFORMS};
+use ori_compiler::mobile::{build_mobile_manifest_with_ui, validate_manifest, SUPPORTED_PLATFORMS};
+use ori_compiler::mobile_ui_ir::NativeUiKind;
 use ori_compiler::openapi::extract_openapi;
 use ori_compiler::patch::check_patch_json;
 use ori_compiler::patch_apply::apply_patch;
@@ -81,6 +87,7 @@ fn main() {
         "registry" => cmd_registry(&args[1..]),
         "schema" => cmd_schema(&args[1..]),
         "preprocess" => cmd_preprocess(&args[1..]),
+        "serve" => cmd_serve(&args[1..]),
         "doctor" => cmd_doctor(),
         other => {
             eprintln!("unknown command `{other}`");
@@ -106,6 +113,7 @@ fn print_help() {
     println!("  ori agent diagnose [--json] <file.ori>");
     println!("  ori agent tests --affected [--changed-name <name>...] [--json] <root>");
     println!("  ori agent changed [--prev <prev.json>] [--json] <path>");
+    println!("  ori agent telemetry --in <session.json | -> [--json]");
     println!("  ori patch check [--json] <patch.json>");
     println!("  ori patch apply [--dry-run] [--json] <patch.json> <source.ori>");
     println!("  ori patch dry-run [--json] <patch.json> <source.ori>");
@@ -115,13 +123,15 @@ fn print_help() {
     println!("  ori sbom [--json] [--format <ori-native|spdx|cyclonedx>] [path]");
     println!("  ori provenance verify [--json] <file.json>");
     println!("  ori run [--entry <name>] [--json] <file.ori>");
-    println!("  ori build [--target dev|release|wasm-component|llvm-text|mobile] [--app-id <id>] [--platforms ios,android] [--json] <file.ori>");
+    println!("  ori build [--target dev|release|wasm-component|llvm-text|mobile] [--app-id <id>] [--platforms ios,android] [--ui-kind ios-uikit|ios-swiftui|android-compose|android-view] [--json] <file.ori>");
     println!("  ori bench [--json] [--samples N]");
     println!("  ori openapi [--json] <file.ori>");
     println!("  ori ui [--json] <file.ori>");
+    println!("  ori ui render --dry-run --module <path> --view <symbol>");
     println!("  ori design check [--tokens <file>] [--json] <module.ori>");
     println!("  ori wasm [--json] <file.ori>");
     println!("  ori capability [--policy a,b,c] [--json] <file.ori>");
+    println!("  ori capability check --dry-run --module <path> --principal <id> --has <a,b>");
     println!("  ori test [--changed] [--json] <root>");
     println!("  ori coverage [--json] <path>");
     println!("  ori docs [--format human|agent] [--budget N] [--json] [path]");
@@ -134,6 +144,7 @@ fn print_help() {
     println!("  ori schema import grpc <file.proto> --module <name> [--json]");
     println!("  ori schema import graphql <file.graphql> --module <name> [--json]");
     println!("  ori preprocess [--const k=v ...] [--allow-env X,Y] [--json] <file.ori>");
+    println!("  ori serve --dry-run --module <file.ori>");
     println!("  ori doctor [--json]");
 }
 
@@ -258,6 +269,7 @@ fn cmd_agent(args: &[String]) -> i32 {
         "diagnose" => cmd_agent_diagnose(&args[1..]),
         "tests" => cmd_agent_tests(&args[1..]),
         "changed" => cmd_agent_changed(&args[1..]),
+        "telemetry" => cmd_agent_telemetry(&args[1..]),
         other => {
             eprintln!("unknown agent subcommand `{other}`");
             2
@@ -396,6 +408,65 @@ fn persist_fingerprints(path: &Path, table: &BTreeMap<String, u64>) {
             "warning: could not write fingerprint cache {}: {err}",
             path.display()
         );
+    }
+}
+
+fn cmd_agent_telemetry(args: &[String]) -> i32 {
+    let mut input: Option<String> = None;
+    let mut idx = 0usize;
+    while idx < args.len() {
+        match args[idx].as_str() {
+            "--in" => {
+                let Some(value) = args.get(idx + 1) else {
+                    eprintln!("--in requires a value (path or `-` for stdin)");
+                    return 2;
+                };
+                input = Some(value.clone());
+                idx += 2;
+            }
+            "--json" => idx += 1,
+            other => {
+                eprintln!("unknown flag `{other}`");
+                return 2;
+            }
+        }
+    }
+    let Some(input) = input else {
+        eprintln!("usage: ori agent telemetry --in <session.json | ->");
+        return 2;
+    };
+
+    let text = if input == "-" {
+        let mut buf = String::new();
+        use std::io::Read;
+        match std::io::stdin().read_to_string(&mut buf) {
+            Ok(_) => buf,
+            Err(err) => {
+                eprintln!("failed to read stdin: {err}");
+                return 2;
+            }
+        }
+    } else {
+        match fs::read_to_string(&input) {
+            Ok(text) => text,
+            Err(err) => {
+                eprintln!("failed to read {input}: {err}");
+                return 2;
+            }
+        }
+    };
+
+    match parse_telemetry_json(&text) {
+        Ok(envelope) => {
+            // Re-serialise so the emitted envelope is canonical (totals
+            // recomputed, fields in declaration order).
+            println!("{}", telemetry_json(&envelope));
+            0
+        }
+        Err(err) => {
+            eprintln!("invalid model-loop telemetry: {err}");
+            1
+        }
     }
 }
 
@@ -642,6 +713,7 @@ fn cmd_build(args: &[String]) -> i32 {
     let mut file: Option<String> = None;
     let mut app_id: Option<String> = None;
     let mut platforms: Vec<String> = Vec::new();
+    let mut ui_kind: Option<NativeUiKind> = None;
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
         match arg.as_str() {
@@ -664,6 +736,19 @@ fn cmd_build(args: &[String]) -> i32 {
                         .collect();
                 }
             }
+            "--ui-kind" => {
+                if let Some(value) = iter.next() {
+                    match NativeUiKind::from_cli_str(value.as_str()) {
+                        Some(kind) => ui_kind = Some(kind),
+                        None => {
+                            eprintln!(
+                                "unknown --ui-kind `{value}` (expected ios-uikit|ios-swiftui|android-compose|android-view)"
+                            );
+                            return 2;
+                        }
+                    }
+                }
+            }
             "--json" => json = true,
             value if !value.starts_with("--") => file = Some(value.to_string()),
             value => {
@@ -674,7 +759,7 @@ fn cmd_build(args: &[String]) -> i32 {
     }
     let Some(file) = file else {
         eprintln!(
-            "usage: ori build [--target dev|release|wasm-component|llvm-text|mobile] [--app-id <id>] [--platforms ios,android] [--json] <file.ori>"
+            "usage: ori build [--target dev|release|wasm-component|llvm-text|mobile] [--app-id <id>] [--platforms ios,android] [--ui-kind ios-uikit|ios-swiftui|android-compose|android-view] [--json] <file.ori>"
         );
         return 2;
     };
@@ -701,8 +786,12 @@ fn cmd_build(args: &[String]) -> i32 {
                     };
                     let platforms_ref: Vec<&str> =
                         platforms_default.iter().map(|s| s.as_str()).collect();
-                    let manifest =
-                        build_mobile_manifest(&result.module, &app_id_value, &platforms_ref);
+                    let manifest = build_mobile_manifest_with_ui(
+                        &result.module,
+                        &app_id_value,
+                        &platforms_ref,
+                        ui_kind,
+                    );
                     let mobile_diags = validate_manifest(&manifest, &file);
                     let output_path = format!("{file}.mobile.json");
                     let manifest_json = manifest.to_json();
@@ -888,8 +977,20 @@ fn cmd_openapi(args: &[String]) -> i32 {
 }
 
 fn cmd_ui(args: &[String]) -> i32 {
+    // `ori ui [--json] <file.ori>`   (legacy)
+    // `ori ui render --dry-run --module <path> --view <symbol>`   (M29)
+    //
+    // Dispatch on the first positional: when it matches a known
+    // subcommand we delegate; otherwise we fall back to the legacy
+    // manifest emit so existing scripts keep working.
+    if let Some(first) = args.first() {
+        if first == "render" {
+            return cmd_ui_render(&args[1..]);
+        }
+    }
     let Some(file) = positional_file(args) else {
         eprintln!("usage: ori ui [--json] <file.ori>");
+        eprintln!("       ori ui render --dry-run --module <path> --view <symbol>");
         return 2;
     };
     match Compiler::check_file(&file) {
@@ -900,6 +1001,99 @@ fn cmd_ui(args: &[String]) -> i32 {
         Err(err) => {
             eprintln!("failed to read {file}: {err}");
             2
+        }
+    }
+}
+
+fn cmd_ui_render(args: &[String]) -> i32 {
+    let mut dry_run = false;
+    let mut module_path: Option<String> = None;
+    let mut view_query: Option<String> = None;
+    let mut idx = 0usize;
+    while idx < args.len() {
+        match args[idx].as_str() {
+            "--dry-run" => {
+                dry_run = true;
+                idx += 1;
+            }
+            "--module" => {
+                let Some(value) = args.get(idx + 1) else {
+                    eprintln!("--module requires a value");
+                    return 2;
+                };
+                module_path = Some(value.clone());
+                idx += 2;
+            }
+            "--view" => {
+                let Some(value) = args.get(idx + 1) else {
+                    eprintln!("--view requires a value");
+                    return 2;
+                };
+                view_query = Some(value.clone());
+                idx += 2;
+            }
+            other => {
+                eprintln!("unknown flag `{other}`");
+                return 2;
+            }
+        }
+    }
+    if !dry_run {
+        eprintln!("usage: ori ui render --dry-run --module <path> --view <symbol>");
+        return 2;
+    }
+    let Some(module_path) = module_path else {
+        eprintln!("--module is required");
+        return 2;
+    };
+    let Some(view_query) = view_query else {
+        eprintln!("--view is required");
+        return 2;
+    };
+
+    let result = match Compiler::check_file(&module_path) {
+        Ok(r) => r,
+        Err(err) => {
+            eprintln!("failed to read {module_path}: {err}");
+            return 2;
+        }
+    };
+
+    let manifest = build_ui_manifest(&result.module);
+    let entry = manifest
+        .views
+        .iter()
+        .find(|v| v.symbol == view_query || v.name == view_query);
+    let Some(entry) = entry else {
+        eprintln!(
+            "view `{view_query}` not found in module `{}`",
+            result.module.name
+        );
+        return 2;
+    };
+
+    // Lower the manifest prop list into PropSlots. The bootstrap manifest
+    // does not yet carry kind information beyond the printed type string,
+    // so every slot is treated as an optional `str` for dry-run purposes.
+    // This keeps the contract honest: dry-runs always succeed even when
+    // the source-level types are richer than the runtime can represent.
+    let slots: Vec<ori_compiler::ui_render::PropSlot> = entry
+        .props
+        .iter()
+        .map(|p| ori_compiler::ui_render::PropSlot::optional(p.name.clone(), "str"))
+        .collect();
+
+    let view = ori_compiler::ui_render::ViewDecl::placeholder(entry.name.clone(), slots)
+        .with_symbol(entry.symbol.clone());
+
+    match ori_compiler::ui_render::render_view(&view, &std::collections::BTreeMap::new()) {
+        Ok(tree) => {
+            println!("{}", ori_compiler::ui_render::render_report_json(&tree));
+            0
+        }
+        Err(err) => {
+            eprintln!("render failed: {err}");
+            1
         }
     }
 }
@@ -1247,6 +1441,15 @@ fn cmd_wasm(args: &[String]) -> i32 {
 }
 
 fn cmd_capability(args: &[String]) -> i32 {
+    // `ori capability check ...` dispatches to the M35 runtime guard
+    // dry-run. Every other invocation keeps the legacy
+    // `ori capability [--policy ...] <file.ori>` shape so existing
+    // tooling keeps working.
+    if let Some(first) = args.first() {
+        if first == "check" {
+            return cmd_capability_check(&args[1..]);
+        }
+    }
     let mut policy: Vec<String> = Vec::new();
     let mut file: Option<String> = None;
     let mut iter = args.iter();
@@ -1284,6 +1487,114 @@ fn cmd_capability(args: &[String]) -> i32 {
             2
         }
     }
+}
+
+/// `ori capability check --dry-run --module <path> --principal <id> --has <effect>,<effect>`
+///
+/// Walks every Service- and Route-style symbol in the module, builds a
+/// [`CallContext`] per route using the principal id and the effects the
+/// principal currently `--has`, runs [`guard_call_at`] with `now=0` so
+/// expired tokens still produce stable output, and prints a single
+/// `ori.capability_runtime.v1` JSON envelope to stdout.
+fn cmd_capability_check(args: &[String]) -> i32 {
+    let mut module_path: Option<String> = None;
+    let mut principal: Option<String> = None;
+    let mut has: Vec<String> = Vec::new();
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--dry-run" => {}
+            "--json" => {}
+            "--module" => {
+                if let Some(value) = iter.next() {
+                    module_path = Some(value.clone());
+                }
+            }
+            "--principal" => {
+                if let Some(value) = iter.next() {
+                    principal = Some(value.clone());
+                }
+            }
+            "--has" => {
+                if let Some(value) = iter.next() {
+                    has = value
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                }
+            }
+            value if !value.starts_with("--") && module_path.is_none() => {
+                module_path = Some(value.to_string());
+            }
+            value => {
+                eprintln!("unknown flag `{value}`");
+                return 2;
+            }
+        }
+    }
+    let Some(module_path) = module_path else {
+        eprintln!(
+            "usage: ori capability check --dry-run --module <path> --principal <id> --has <a,b>"
+        );
+        return 2;
+    };
+    let principal_id = principal.unwrap_or_else(|| "anonymous".to_string());
+    let result = match Compiler::check_file(&module_path) {
+        Ok(r) => r,
+        Err(err) => {
+            eprintln!("failed to read {module_path}: {err}");
+            return 2;
+        }
+    };
+
+    // Build the capability set from the comma-separated --has list. Each
+    // effect gets a token issued to the same principal with no expiry,
+    // so guard_call_at with now=0 will report Allowed iff every required
+    // effect is in the held set.
+    let mut tokens: BTreeMap<String, CapabilityToken> = BTreeMap::new();
+    for effect in &has {
+        tokens.insert(
+            effect.clone(),
+            CapabilityToken {
+                effect: effect.clone(),
+                issued_to: principal_id.clone(),
+                expires_at: None,
+            },
+        );
+    }
+    let cap_set = CapabilitySet {
+        tokens,
+        denials: std::collections::BTreeSet::new(),
+        audit_required: std::collections::BTreeSet::new(),
+    };
+
+    // Each route/service symbol with declared effects yields one
+    // CallContext; symbols with no effects are skipped because there is
+    // nothing to guard.
+    let mut outcomes = Vec::new();
+    for symbol in &result.module.symbols {
+        let is_routeish = matches!(
+            symbol.kind,
+            SymbolKind::Function | SymbolKind::Service | SymbolKind::Query
+        );
+        if !is_routeish {
+            continue;
+        }
+        if symbol.effects.is_empty() {
+            continue;
+        }
+        let required: std::collections::BTreeSet<String> = symbol.effects.iter().cloned().collect();
+        let ctx = CallContext {
+            caller_symbol: symbol.id.clone(),
+            required_effects: required,
+            principal_id: principal_id.clone(),
+            capabilities: cap_set.clone(),
+        };
+        outcomes.push(guard_call_at(&ctx, 0));
+    }
+    println!("{}", guard_report_json(&outcomes));
+    0
 }
 
 fn cmd_test(args: &[String]) -> i32 {
@@ -1571,6 +1882,64 @@ fn cmd_patch_explain(args: &[String]) -> i32 {
 fn cmd_doctor() -> i32 {
     println!("{}", doctor_report_json());
     0
+}
+
+fn cmd_serve(args: &[String]) -> i32 {
+    // `ori serve --dry-run --module <path>` — load the module, build
+    // the runtime dispatch table, and print the `ori.backend_dispatch.v1`
+    // envelope. No HTTP server is started; `--dry-run` is the only
+    // supported mode for the M28 milestone.
+    let mut dry_run = false;
+    let mut module_path: Option<String> = None;
+    let mut idx = 0usize;
+    while idx < args.len() {
+        match args[idx].as_str() {
+            "--dry-run" => {
+                dry_run = true;
+                idx += 1;
+            }
+            "--module" => {
+                let Some(value) = args.get(idx + 1) else {
+                    eprintln!("--module requires a value");
+                    return 2;
+                };
+                module_path = Some(value.clone());
+                idx += 2;
+            }
+            "--json" => {
+                // Accept and ignore: the dispatch report is always JSON.
+                idx += 1;
+            }
+            other if other.starts_with("--") => {
+                eprintln!("unknown flag `{other}`");
+                return 2;
+            }
+            other => {
+                module_path = Some(other.to_string());
+                idx += 1;
+            }
+        }
+    }
+    if !dry_run {
+        eprintln!("usage: ori serve --dry-run --module <file.ori>");
+        eprintln!("note: only --dry-run is supported in the M28 bootstrap");
+        return 2;
+    }
+    let Some(path) = module_path else {
+        eprintln!("usage: ori serve --dry-run --module <file.ori>");
+        return 2;
+    };
+    match Compiler::check_file(&path) {
+        Ok(result) => {
+            let table = build_dispatch_table(&result.module);
+            println!("{}", dispatch_report_json(&table));
+            0
+        }
+        Err(err) => {
+            eprintln!("failed to read {path}: {err}");
+            2
+        }
+    }
 }
 
 fn cmd_preprocess(args: &[String]) -> i32 {

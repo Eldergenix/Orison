@@ -1,0 +1,3 @@
+// Triggers E0220: imports a sibling module that is not provided to the resolver.
+module diag.unresolved_import
+import demo.nonexistent

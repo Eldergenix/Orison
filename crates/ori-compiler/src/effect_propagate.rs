@@ -274,6 +274,19 @@ fn collect_callees(
             }
         }
         Expr::Lambda { body, .. } => collect_callees(body, by_name, caller_id, out),
+        Expr::InterpString { parts } => {
+            for part in parts {
+                if let crate::expr::InterpPart::Expr(inner) = part {
+                    collect_callees(inner, by_name, caller_id, out);
+                }
+            }
+        }
+        Expr::RawStr { .. } => {}
+        Expr::Binary { lhs, rhs, .. } => {
+            collect_callees(lhs, by_name, caller_id, out);
+            collect_callees(rhs, by_name, caller_id, out);
+        }
+        Expr::Unary { operand, .. } => collect_callees(operand, by_name, caller_id, out),
     }
 }
 

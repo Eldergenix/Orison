@@ -1,0 +1,4 @@
+// Triggers B0050: returns `&Int` but no parameter borrows a compatible Int.
+module diag.borrow_dangling
+fn make() -> &Int:
+  return 0

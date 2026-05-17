@@ -22,6 +22,7 @@
 use crate::ast::{Module, SymbolKind};
 use crate::diagnostic::Diagnostic;
 use crate::json::to_json;
+use crate::mobile_ui_ir::{build_native_ui_manifest, NativeUiKind, NativeUiManifest};
 use crate::source::Span;
 use serde::Serialize;
 use std::collections::BTreeSet;
@@ -41,6 +42,11 @@ pub struct MobileManifest {
     pub permissions: Vec<Permission>,
     pub capabilities: Vec<String>,
     pub entrypoints: Vec<String>,
+    /// Optional native UI binding manifest. Skipped from JSON when `None`
+    /// so the existing `ori.mobile_manifest.v1` shape is unchanged for
+    /// callers that do not request a native UI target.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub native_ui_manifest: Option<NativeUiManifest>,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq, Clone)]
@@ -162,7 +168,25 @@ pub fn build_mobile_manifest(module: &Module, app_id: &str, platforms: &[&str]) 
         permissions,
         capabilities: capabilities.into_iter().collect(),
         entrypoints: entrypoints.into_iter().collect(),
+        native_ui_manifest: None,
     }
+}
+
+/// Build a mobile manifest with an optional embedded native UI manifest.
+///
+/// Passing `None` produces the same JSON shape as [`build_mobile_manifest`]
+/// (the `native_ui_manifest` field is skipped from serialisation). Passing
+/// `Some(kind)` runs [`build_native_ui_manifest`] over the module and embeds
+/// the result so consumers can drive native bindings from a single artefact.
+pub fn build_mobile_manifest_with_ui(
+    module: &Module,
+    app_id: &str,
+    platforms: &[&str],
+    ui_kind: Option<NativeUiKind>,
+) -> MobileManifest {
+    let mut manifest = build_mobile_manifest(module, app_id, platforms);
+    manifest.native_ui_manifest = ui_kind.map(|kind| build_native_ui_manifest(module, kind));
+    manifest
 }
 
 /// Is the given permission *required* on the given platform (i.e. would
@@ -480,5 +504,39 @@ mod tests {
         let json = build_mobile_manifest(&module, "com.example.demo", &["ios"]).to_json();
         assert!(json.contains("\"schema\":\"ori.mobile_manifest.v1\""));
         assert!(json.contains("\"app_id\":\"com.example.demo\""));
+    }
+
+    #[test]
+    fn default_manifest_omits_native_ui_manifest_field() {
+        let module = module_for("module demo\nview Hero(text: Str) uses ui");
+        let json = build_mobile_manifest(&module, "com.example.demo", &["ios"]).to_json();
+        assert!(
+            !json.contains("native_ui_manifest"),
+            "default manifest must omit the optional native_ui_manifest field"
+        );
+    }
+
+    #[test]
+    fn with_ui_kind_embeds_native_ui_manifest() {
+        let module = module_for("module demo\nview Hero(text: Str)");
+        let manifest = build_mobile_manifest_with_ui(
+            &module,
+            "com.example.demo",
+            &["ios"],
+            Some(NativeUiKind::iOS_UIKit),
+        );
+        assert!(manifest.native_ui_manifest.is_some());
+        let json = manifest.to_json();
+        assert!(json.contains("\"native_ui_manifest\""));
+        assert!(json.contains("\"target\":\"ios-uikit\""));
+    }
+
+    #[test]
+    fn with_none_ui_kind_omits_native_ui_manifest_field() {
+        let module = module_for("module demo\nview Hero(text: Str)");
+        let manifest = build_mobile_manifest_with_ui(&module, "com.example.demo", &["ios"], None);
+        assert!(manifest.native_ui_manifest.is_none());
+        let json = manifest.to_json();
+        assert!(!json.contains("native_ui_manifest"));
     }
 }

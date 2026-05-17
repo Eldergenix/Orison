@@ -1,0 +1,5 @@
+// Triggers E0540: match on Status omits the `C` constructor.
+module diag.exhaustive
+type Status = | A | B | C
+fn handle(s: Status) -> Int:
+  match s | A => 1 | B => 2

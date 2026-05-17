@@ -1,0 +1,1 @@
+{"code":"R0001","message":"entry function `missing` not found in module `diag.r0001`","observed_effects":[],"schema":"ori.runtime.v1","source":"tests/golden/runtime/r0001_entry_missing.ori"}

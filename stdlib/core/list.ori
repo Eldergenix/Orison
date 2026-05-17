@@ -1,21 +1,36 @@
 // capsule: core.list — Persistent list type and structural transforms.
+//
+// The bootstrap List[T] is an opaque persistent collection. Functions
+// that need a runtime allocator (push, pop, map, filter) defer to the
+// `list.*` capability when present; for now they round-trip the input
+// so callers exercise the surface and the type-checker sees the right
+// shape.
 module core.list
 
 import core.option
 
 type List[T]
 
+// Returns the input unchanged. M27-deferred: needs runtime append.
 fn push[T](list: List[T], value: T) -> List[T]:
   return list
 
+// Returns `None` for any list. M27-deferred: needs runtime split.
 fn pop[T](list: List[T]) -> Option[T]:
   return None
 
+// Length of `list`. M27-deferred: needs runtime length primitive.
 fn len[T](list: List[T]) -> Int:
   return 0
 
+// Map `f` over `list`. M27-deferred: needs runtime iteration + alloc.
 fn map[T, U](list: List[T], f: Fn(T) -> U) -> List[U]:
   return List.empty()
 
+// Filter `list` by `pred`. M27-deferred: needs runtime iteration.
 fn filter[T](list: List[T], pred: Fn(T) -> Bool) -> List[T]:
   return list
+
+// True when `list` has no elements. Sugar for `len(list) == 0`.
+fn is_empty[T](list: List[T]) -> Bool:
+  return len(list) == 0

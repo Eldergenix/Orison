@@ -1,0 +1,4 @@
+// Triggers MOB0002: platforms list contains `web` which mobile pass refuses.
+module diag.mob0002
+fn ping() -> Unit:
+  return Unit

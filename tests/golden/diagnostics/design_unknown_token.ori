@@ -1,0 +1,4 @@
+// Triggers D0010: view references `tokens.colors.brandiose` not in the design tokens file.
+module diag.design_unknown_token
+view Hero(title: Str) -> Html uses ui:
+  text(color: tokens.colors.brandiose)

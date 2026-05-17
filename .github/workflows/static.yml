@@ -29,3 +29,8 @@ jobs:
 
       - name: Run static gate
         run: python3 scripts/validate_all.py --static-only
+
+      - name: Bench-compare tool health check
+        # Sanity-checks the bench regression script: any import error,
+        # syntax error, or missing dep here would break the bench gate.
+        run: python3 scripts/compare_bench.py --help

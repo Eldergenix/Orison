@@ -1,0 +1,4 @@
+// Pair with sql_query_shape_b.ori: triggers Q0020 (mismatched shapes across declarations).
+module diag.sql_shape
+type UserId
+query find_user(id: UserId) -> {id: UserId, name: Str}

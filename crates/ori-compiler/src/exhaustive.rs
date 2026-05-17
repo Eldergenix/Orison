@@ -482,6 +482,49 @@ fn walk_expr(
             );
         }
         Expr::Lit(_) | Expr::Var(_) | Expr::Return(None) | Expr::Error => {}
+        Expr::InterpString { parts } => {
+            for part in parts {
+                if let crate::expr::InterpPart::Expr(inner) = part {
+                    walk_expr(
+                        inner,
+                        symbol_id,
+                        symbol_span,
+                        variants,
+                        ctor_to_variant,
+                        diags,
+                    );
+                }
+            }
+        }
+        Expr::RawStr { .. } => {}
+        Expr::Binary { lhs, rhs, .. } => {
+            walk_expr(
+                lhs,
+                symbol_id,
+                symbol_span,
+                variants,
+                ctor_to_variant,
+                diags,
+            );
+            walk_expr(
+                rhs,
+                symbol_id,
+                symbol_span,
+                variants,
+                ctor_to_variant,
+                diags,
+            );
+        }
+        Expr::Unary { operand, .. } => {
+            walk_expr(
+                operand,
+                symbol_id,
+                symbol_span,
+                variants,
+                ctor_to_variant,
+                diags,
+            );
+        }
     }
 }
 

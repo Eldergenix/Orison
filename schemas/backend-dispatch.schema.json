@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.dev/schemas/backend-dispatch.schema.json",
+  "title": "Orison Backend Dispatch Report v1",
+  "description": "Deterministic snapshot of the runtime HTTP dispatch table produced by `build_dispatch_table` and surfaced via `ori serve --dry-run`. One entry per (method, path) pair, sorted ascending.",
+  "type": "object",
+  "required": [
+    "schema",
+    "route_count",
+    "routes"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.backend_dispatch.v1"
+    },
+    "route_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "routes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "symbol_id",
+          "method",
+          "path",
+          "effects",
+          "principal_required"
+        ],
+        "properties": {
+          "symbol_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "method": {
+            "enum": [
+              "GET",
+              "POST",
+              "PUT",
+              "PATCH",
+              "DELETE"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "effects": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "principal_required": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.backend_dispatch.v1",
+      "route_count": 2,
+      "routes": [
+        {
+          "symbol_id": "sym:demo.get_users",
+          "method": "GET",
+          "path": "/users",
+          "effects": [
+            "db.read",
+            "http"
+          ],
+          "principal_required": true
+        },
+        {
+          "symbol_id": "sym:demo.post_users",
+          "method": "POST",
+          "path": "/users",
+          "effects": [
+            "db.write",
+            "http"
+          ],
+          "principal_required": true
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+// Pair with cycle_b.ori: triggers E0230 (module import cycle) via the resolver.
+module cycle_a
+import cycle_b

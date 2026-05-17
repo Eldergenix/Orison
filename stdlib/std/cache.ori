@@ -1,5 +1,12 @@
-// capsule: std.cache — typed in-process cache surface (bootstrap stub)
+// capsule: std.cache — typed in-process cache surface.
+//
+// Bodies remain declarations until the runtime exposes the underlying
+// LRU primitive; the type-checker still validates the shape of every
+// call-site. Eviction is bounded by `capacity` and is FIFO when
+// `Full` would otherwise occur.
 module std.cache
+
+import core.option
 
 type Cache[K, V]
 
@@ -7,8 +14,24 @@ variant CacheError =
   | Full
   | Evicted(key: K)
 
-fn new_cache(capacity: Int) -> Cache[K, V]
-fn put(cache: Cache[K, V], key: K, value: V) -> Result[Unit, CacheError]
-fn get(cache: Cache[K, V], key: K) -> Option[V]
-fn invalidate(cache: Cache[K, V], key: K) -> Unit
-fn len(cache: Cache[K, V]) -> Int
+// Construct a cache that holds at most `capacity` entries.
+// M27-deferred: needs `cache` runtime capability.
+fn new_cache[K, V](capacity: Int) -> Cache[K, V]
+
+// Insert `value` under `key`. Returns `Err(Full)` when the cache is
+// saturated and eviction is disabled, or `Err(Evicted(k))` when an
+// older entry was dropped to make room.
+// M27-deferred: needs `cache` runtime capability.
+fn put[K, V](cache: Cache[K, V], key: K, value: V) -> Result[Unit, CacheError]
+
+// Look up `key`. Returns `None` on miss.
+// M27-deferred: needs `cache` runtime capability.
+fn get[K, V](cache: Cache[K, V], key: K) -> Option[V]
+
+// Drop the entry for `key` if present. Idempotent.
+// M27-deferred: needs `cache` runtime capability.
+fn invalidate[K, V](cache: Cache[K, V], key: K) -> Unit
+
+// Number of live entries in the cache.
+// M27-deferred: needs `cache` runtime capability.
+fn len[K, V](cache: Cache[K, V]) -> Int

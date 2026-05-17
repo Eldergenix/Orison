@@ -1,0 +1,4 @@
+// Triggers R0002: body references undefined name `ghost`.
+module diag.r0002
+fn main() -> Int:
+  return ghost

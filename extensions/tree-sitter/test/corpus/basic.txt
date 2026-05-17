@@ -1,0 +1,354 @@
+================================================================================
+module declaration
+================================================================================
+
+module demo_store.domain
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    path: (dotted_path
+      (identifier)
+      (identifier))))
+
+================================================================================
+import declaration
+================================================================================
+
+module demo_store.api
+import demo_store.domain
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    path: (dotted_path (identifier) (identifier)))
+  (import_decl
+    path: (dotted_path (identifier) (identifier))))
+
+================================================================================
+newtype with wraps
+================================================================================
+
+module x
+type ProductId wraps Str
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl path: (dotted_path (identifier)))
+  (type_decl
+    name: (type_identifier)
+    (newtype_body
+      inner: (type_ref (type_identifier)))))
+
+================================================================================
+record type
+================================================================================
+
+module x
+type Money = {
+  currency: Str,
+  amount_minor: Int
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl path: (dotted_path (identifier)))
+  (type_decl
+    name: (type_identifier)
+    (record_type
+      (record_field name: (identifier) type: (type_ref (type_identifier)))
+      (record_field name: (identifier) type: (type_ref (type_identifier))))))
+
+================================================================================
+variant type with payloads
+================================================================================
+
+module x
+type OrderStatus =
+  | Pending
+  | Paid
+  | Cancelled(reason: Str)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl path: (dotted_path (identifier)))
+  (type_decl
+    name: (type_identifier)
+    (variant_type
+      (variant_arm name: (type_identifier))
+      (variant_arm name: (type_identifier))
+      (variant_arm
+        name: (type_identifier)
+        (variant_payload_field name: (identifier) type: (type_ref (type_identifier)))))))
+
+================================================================================
+fn with uses clause and return
+================================================================================
+
+module x
+fn money_zero() -> Money:
+  return Unit
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl path: (dotted_path (identifier)))
+  (fn_decl
+    name: (identifier)
+    (param_list)
+    return_type: (type_ref (type_identifier))
+    body: (block
+      (return_stmt value: (literal_expr (unit_literal))))))
+
+================================================================================
+fn with capability uses clause
+================================================================================
+
+module x
+fn boot() -> Unit uses http, db.read:
+  return Unit
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl path: (dotted_path (identifier)))
+  (fn_decl
+    name: (identifier)
+    (param_list)
+    return_type: (type_ref (type_identifier))
+    (uses_clause
+      (capability_ref (dotted_path (identifier)))
+      (capability_ref (dotted_path (identifier) (identifier))))
+    body: (block
+      (return_stmt value: (literal_expr (unit_literal))))))
+
+================================================================================
+service declaration
+================================================================================
+
+module x
+service Storefront uses http, db.read
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl path: (dotted_path (identifier)))
+  (service_decl
+    name: (type_identifier)
+    (uses_clause
+      (capability_ref (dotted_path (identifier)))
+      (capability_ref (dotted_path (identifier) (identifier))))))
+
+================================================================================
+nested generic types
+================================================================================
+
+module x
+fn lookup() -> Result[List[Option[Product]], Str]:
+  return Unit
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl path: (dotted_path (identifier)))
+  (fn_decl
+    name: (identifier)
+    (param_list)
+    return_type: (generic_type
+      name: (type_identifier)
+      (generic_type
+        name: (type_identifier)
+        (generic_type
+          name: (type_identifier)
+          (type_ref (type_identifier))))
+      (type_ref (type_identifier)))
+    body: (block
+      (return_stmt value: (literal_expr (unit_literal))))))
+
+================================================================================
+record construction
+================================================================================
+
+module x
+fn make() -> Money:
+  return Money { currency: "USD", amount_minor: 0 }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl path: (dotted_path (identifier)))
+  (fn_decl
+    name: (identifier)
+    (param_list)
+    return_type: (type_ref (type_identifier))
+    body: (block
+      (return_stmt
+        value: (construct_expr
+          type: (type_identifier)
+          (construct_field
+            name: (identifier)
+            value: (literal_expr (string_literal (string_content))))
+          (construct_field
+            name: (identifier)
+            value: (literal_expr (number_literal))))))))
+
+================================================================================
+binary operator precedence
+================================================================================
+
+module x
+fn calc() -> Int:
+  return 1 + 2 * 3
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl path: (dotted_path (identifier)))
+  (fn_decl
+    name: (identifier)
+    (param_list)
+    return_type: (type_ref (type_identifier))
+    body: (block
+      (return_stmt
+        value: (binary_expr
+          left: (literal_expr (number_literal))
+          right: (binary_expr
+            left: (literal_expr (number_literal))
+            right: (literal_expr (number_literal)))))))))
+
+================================================================================
+right-associative coalesce
+================================================================================
+
+module x
+fn pick() -> Int:
+  return a ?? b ?? c
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl path: (dotted_path (identifier)))
+  (fn_decl
+    name: (identifier)
+    (param_list)
+    return_type: (type_ref (type_identifier))
+    body: (block
+      (return_stmt
+        value: (binary_expr
+          left: (identifier)
+          right: (binary_expr
+            left: (identifier)
+            right: (identifier)))))))
+
+================================================================================
+match expression
+================================================================================
+
+module x
+fn handle(s: OrderStatus) -> Int:
+  return match s:
+    | Pending => 0
+    | Paid => 1
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl path: (dotted_path (identifier)))
+  (fn_decl
+    name: (identifier)
+    (param_list
+      (param name: (identifier) type: (type_ref (type_identifier))))
+    return_type: (type_ref (type_identifier))
+    body: (block
+      (return_stmt
+        value: (match_expr
+          subject: (identifier)
+          (match_arm
+            pattern: (variant_pattern (type_identifier))
+            body: (literal_expr (number_literal)))
+          (match_arm
+            pattern: (variant_pattern (type_identifier))
+            body: (literal_expr (number_literal))))))))
+
+================================================================================
+try operator (postfix ?)
+================================================================================
+
+module x
+fn fetch() -> Int:
+  return load()?
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl path: (dotted_path (identifier)))
+  (fn_decl
+    name: (identifier)
+    (param_list)
+    return_type: (type_ref (type_identifier))
+    body: (block
+      (return_stmt
+        value: (try_expr
+          value: (call_expr callee: (identifier)))))))
+
+================================================================================
+numeric literals with underscores and hex
+================================================================================
+
+module x
+fn nums() -> Int:
+  let a = 1_000_000
+  let b = 0xDEAD_BEEF
+  let c = 0b1010_1010
+  return a
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl path: (dotted_path (identifier)))
+  (fn_decl
+    name: (identifier)
+    (param_list)
+    return_type: (type_ref (type_identifier))
+    body: (block
+      (let_stmt name: (identifier) value: (literal_expr (number_literal)))
+      (let_stmt name: (identifier) value: (literal_expr (number_literal)))
+      (let_stmt name: (identifier) value: (literal_expr (number_literal)))
+      (return_stmt value: (identifier)))))
+
+================================================================================
+migration with up/down
+================================================================================
+
+module x
+migration add_index:
+  up "CREATE INDEX foo ON bar (baz)"
+  down "DROP INDEX IF EXISTS foo"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl path: (dotted_path (identifier)))
+  (migration_decl
+    name: (identifier)
+    (string_literal (string_content))
+    (string_literal (string_content))))
+
+================================================================================
+capability declaration
+================================================================================
+
+module x
+capability db.read
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl path: (dotted_path (identifier)))
+  (capability_decl
+    name: (dotted_path (identifier) (identifier))))

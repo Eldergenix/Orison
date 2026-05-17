@@ -3,7 +3,37 @@
 This roadmap is the *delta* between the current bootstrap and a production
 language. It tracks what is left after the bootstrap drop.
 
-## Currently shipping (waves 1–4)
+## GOAL v2 progress (as of 2026-05-17)
+
+The v2 milestone plan in [`../GOAL.md`](../GOAL.md) breaks the production-
+ready gap into 17 milestones (M21–M37). Current status:
+
+| Milestone | Status | Detail |
+|---|---|---|
+| M21 (body parser ops + strings + numerics) | done | a/b/c sub-milestones landed, ~165 new tests |
+| M22 (full type inference) | in-flight | binary + unary type rules, lambda inference |
+| M23 (region-inference borrow) | planned | wave 3 |
+| M24 (textual codegen expansion) | in-flight | binary/unary, interp strings, records, tuples, lambdas |
+| M25 (wasm multi-function) | in-flight | multi-fn module, locals, control flow |
+| M26 (M:N async runtime) | planned | wave 3 |
+| M27 (stdlib bodies) | in-flight | Option / Result / numeric / validation / url |
+| M28 (real backend dispatcher) | planned | wave 3 |
+| M29 (real UI render pipeline) | planned | wave 3 |
+| M30 (mobile + desktop targets) | partial | M30a hardening done; full M30 planned |
+| M31 (registry + version solver) | done | PubGrub solver + sandbox |
+| M32 (LSP completeness) | partial | M32a VS Code + TreeSitter done |
+| M33 (model-in-loop telemetry) | planned | final wave |
+| M34 (conformance + CI matrix) | done | golden fixtures + cross-platform CI |
+| M35 (capability runtime) | planned | wave 3 |
+| M36 (self-hosting) | design done | implementation deferred |
+| M37 (public ecosystem) | partial | RFC process + governance + tutorial series done |
+
+`done` = acceptance criteria met. `in-flight` = a wave-2 agent is
+actively implementing. `partial` = first slice done, second slice in
+backlog. `planned` = scheduled wave 3 or later. `design done` = design
+doc shipped, implementation deferred.
+
+## Currently shipping (waves 1–4 + GOAL v2 wave 1)
 
 The bootstrap ships:
 

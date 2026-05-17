@@ -1,0 +1,8 @@
+{
+  "schema": "ori.patch.v1",
+  "intent": "Rename a symbol that does not exist",
+  "operations": [
+    {"op": "replace_node", "target": "sym:diag.patch_p1010.nonexistent", "text": "fn ghost() -> Unit"}
+  ],
+  "tests": {"run": []}
+}

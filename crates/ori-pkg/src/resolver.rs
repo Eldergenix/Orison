@@ -10,6 +10,9 @@ use std::fmt;
 use std::path::Path;
 
 use crate::manifest::{DepSpec, Manifest, ManifestError};
+use crate::version::{parse_constraint, parse_version, satisfies};
+use crate::version::{Version, VersionConstraint};
+use crate::version_solver::{solve, DependencyGraph, PackageId, SolverError};
 
 /// One node in the resolved graph.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,7 +185,18 @@ fn walk(
                     }
                 };
                 if let Some(pin) = version {
-                    if pin != &dep_manifest.package.version {
+                    // Compare against the dep manifest version using the
+                    // new version-constraint matcher. Falls back to a string
+                    // compare if either side fails to parse — that keeps the
+                    // pre-version-solver tests green for non-semver strings.
+                    let constraint_ok = match (
+                        parse_constraint(pin),
+                        parse_version(&dep_manifest.package.version),
+                    ) {
+                        (Ok(c), Ok(v)) => satisfies(&v, &c),
+                        _ => pin == &dep_manifest.package.version,
+                    };
+                    if !constraint_ok {
                         stack.pop();
                         return Err(ResolveError {
                             kind: ResolveErrorKind::VersionMismatch {
@@ -235,4 +249,166 @@ fn walk(
     visited.insert(name.to_string());
     stack.pop();
     Ok(())
+}
+
+/// Registry-aware resolve. Each entry of `candidates` lists the available
+/// versions for that dependency name; the version solver picks the highest
+/// version that satisfies every constraint. This is the planned migration
+/// path away from the path-only resolver above: once the registry protocol
+/// is implemented the CLI will populate `candidates` from
+/// `/api/v1/packages/{name}/versions` and call this entry point instead of
+/// [`resolve`].
+///
+/// The path-only [`resolve`] above remains the special case where each dep
+/// has exactly one candidate — its on-disk version — so existing callers do
+/// not need to change.
+pub fn resolve_with_registry(
+    manifest: &Manifest,
+    candidates: &BTreeMap<String, Vec<Version>>,
+) -> Result<BTreeMap<String, Version>, ResolveError> {
+    let root_name = manifest.package.name.clone();
+    let root_version = match parse_version(&manifest.package.version) {
+        Ok(v) => v,
+        Err(err) => {
+            return Err(ResolveError {
+                kind: ResolveErrorKind::PathManifest {
+                    name: root_name,
+                    path: String::new(),
+                    message: format!("root version is not valid semver: {err}"),
+                },
+            });
+        }
+    };
+
+    let mut graph = DependencyGraph::new();
+    // Seed the root.
+    graph
+        .packages
+        .insert(root_name.clone(), vec![root_version.clone()]);
+    let mut root_deps: Vec<(String, VersionConstraint)> = Vec::new();
+    for (name, dep_spec) in &manifest.dependencies {
+        let constraint = match dep_spec.constraint() {
+            Ok(Some(c)) => c,
+            Ok(None) => VersionConstraint::Any,
+            Err(err) => {
+                return Err(ResolveError {
+                    kind: ResolveErrorKind::PathManifest {
+                        name: name.clone(),
+                        path: String::new(),
+                        message: format!("invalid version constraint: {err}"),
+                    },
+                });
+            }
+        };
+        root_deps.push((name.clone(), constraint));
+    }
+    graph.dependencies.insert(
+        PackageId {
+            name: root_name.clone(),
+            version: root_version,
+        },
+        root_deps,
+    );
+    // Copy the candidate set in so the solver sees them.
+    for (name, versions) in candidates {
+        graph
+            .packages
+            .entry(name.clone())
+            .or_insert_with(|| versions.clone());
+    }
+    match solve(&graph, &root_name) {
+        Ok(r) => Ok(r),
+        Err(SolverError::Cycle(chain)) => Err(ResolveError {
+            kind: ResolveErrorKind::Cycle(chain),
+        }),
+        Err(SolverError::NoMatchingVersion(name)) => Err(ResolveError {
+            kind: ResolveErrorKind::PathManifest {
+                name,
+                path: String::new(),
+                message: "no matching version".to_string(),
+            },
+        }),
+        Err(SolverError::Conflict(chain)) => {
+            let rendered: Vec<String> = chain.iter().map(ToString::to_string).collect();
+            Err(ResolveError {
+                kind: ResolveErrorKind::PathManifest {
+                    name: rendered.join(" -> "),
+                    path: String::new(),
+                    message: "version conflict".to_string(),
+                },
+            })
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::assertions_on_constants)]
+mod registry_tests {
+    use super::*;
+    use crate::manifest::Manifest;
+
+    #[test]
+    fn resolve_with_registry_single_dep() {
+        let text = r#"
+schema = "ori.manifest.v1"
+
+[package]
+name = "root"
+version = "1.0.0"
+edition = "2027.1"
+
+[dependencies]
+a = "^1.0.0"
+"#;
+        let manifest = match Manifest::parse(text) {
+            Ok(m) => m,
+            Err(err) => {
+                assert!(false, "parse failed: {err}");
+                return;
+            }
+        };
+        let mut candidates: BTreeMap<String, Vec<Version>> = BTreeMap::new();
+        candidates.insert(
+            "a".to_string(),
+            vec![
+                match parse_version("1.0.0") {
+                    Ok(v) => v,
+                    Err(_) => {
+                        assert!(false, "parse");
+                        return;
+                    }
+                },
+                match parse_version("1.5.0") {
+                    Ok(v) => v,
+                    Err(_) => {
+                        assert!(false, "parse");
+                        return;
+                    }
+                },
+                match parse_version("2.0.0") {
+                    Ok(v) => v,
+                    Err(_) => {
+                        assert!(false, "parse");
+                        return;
+                    }
+                },
+            ],
+        );
+        let r = match resolve_with_registry(&manifest, &candidates) {
+            Ok(r) => r,
+            Err(err) => {
+                assert!(false, "resolve_with_registry failed: {err}");
+                return;
+            }
+        };
+        let got = match r.get("a") {
+            Some(v) => v.clone(),
+            None => {
+                assert!(false, "no a");
+                return;
+            }
+        };
+        assert_eq!(got.major, 1);
+        assert_eq!(got.minor, 5);
+    }
 }

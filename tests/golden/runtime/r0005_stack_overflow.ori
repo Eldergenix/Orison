@@ -1,0 +1,6 @@
+// Triggers R0005: unbounded self-recursion exceeds MAX_CALL_DEPTH.
+module diag.r0005
+fn loop_(n: Int) -> Int:
+  return loop_(n)
+fn main() -> Int:
+  return loop_(0)

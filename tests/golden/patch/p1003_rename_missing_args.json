@@ -1,0 +1,8 @@
+{
+  "schema": "ori.patch.v1",
+  "intent": "Rename without from/to",
+  "operations": [
+    {"op": "rename_symbol", "from": ""}
+  ],
+  "tests": {"run": []}
+}

@@ -402,6 +402,51 @@ fn docs_agent_format_is_markdown() {
 }
 
 #[test]
+fn agent_telemetry_normalises_envelope() {
+    use std::io::Write;
+    let path = std::env::temp_dir().join(format!(
+        "ori_cli_smoke_telemetry_{}_{}.json",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    {
+        let mut f = match std::fs::File::create(&path) {
+            Ok(f) => f,
+            Err(err) => {
+                #[allow(clippy::assertions_on_constants)]
+                {
+                    assert!(false, "could not create temp file: {err}");
+                }
+                return;
+            }
+        };
+        // Intentionally use wrong totals so we can verify the CLI
+        // recomputes them.
+        let _ = f.write_all(
+            br#"{"schema":"ori.model_loop_telemetry.v1","session_id":"smoke","model_id":"m","iterations":[{"iteration":1,"started_at":0,"completed_at":250,"edits_proposed":3,"edits_accepted":2,"edits_rejected":1,"tokens_in":100,"tokens_out":200,"budget_remaining":9700,"diagnostics_before":5,"diagnostics_after":1}],"totals":{"iterations":42,"wall_ms":42,"edits_proposed":42,"edits_accepted":42,"edits_rejected":42,"tokens_in":42,"tokens_out":42,"diagnostics_resolved":42}}"#,
+        );
+    }
+    let path_str = path.to_string_lossy().to_string();
+    let (code, out) = run(&["agent", "telemetry", "--in", &path_str, "--json"]);
+    let _ = std::fs::remove_file(&path);
+    assert_eq!(code, 0, "telemetry should succeed; stdout: {out}");
+    let v = assert_envelope(&out, "ori.model_loop_telemetry.v1");
+    let wall = v
+        .pointer("/totals/wall_ms")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    assert_eq!(wall, 250, "wall_ms should be recomputed from iterations");
+    let resolved = v
+        .pointer("/totals/diagnostics_resolved")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    assert_eq!(resolved, 4, "5 -> 1 should report 4 resolved");
+}
+
+#[test]
 fn migrate_reports_no_candidates_when_already_current() {
     let (code, out) = run(&[
         "migrate",
@@ -417,4 +462,110 @@ fn migrate_reports_no_candidates_when_already_current() {
     let v = assert_envelope(&out, "ori.migration_report.v1");
     let dry = v.get("applied").and_then(|v| v.as_bool()).unwrap_or(true);
     assert!(!dry, "dry-run must not report applied");
+}
+
+#[test]
+fn ui_render_dry_run_emits_ori_ui_render_v1() {
+    // Pick any view symbol from the demo storefront. The dry-run path
+    // renders an empty-prop placeholder so the envelope must come back
+    // with the published schema id and a non-zero node count.
+    let (code, out) = run(&[
+        "ui",
+        "render",
+        "--dry-run",
+        "--module",
+        "examples/demo_store/src/ui.ori",
+        "--view",
+        "ProductDetail",
+    ]);
+    assert_eq!(code, 0, "ui render dry-run exit code (stdout: {out})");
+    let v = assert_envelope(&out, "ori.ui_render.v1");
+    let node_count = v
+        .pointer("/stats/node_count")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    assert!(node_count >= 1, "expected ≥1 node, got {node_count}");
+    let root_kind = v
+        .pointer("/root/kind")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    assert_eq!(root_kind, "ProductDetail");
+}
+
+#[test]
+fn serve_dry_run_emits_ori_backend_dispatch_v1() {
+    // The demo storefront exposes three http-annotated handlers
+    // (get_products, get_product, post_checkout); the dispatch
+    // envelope must enumerate them.
+    let (code, out) = run(&[
+        "serve",
+        "--dry-run",
+        "--module",
+        "examples/demo_store/src/api.ori",
+    ]);
+    assert_eq!(code, 0, "serve --dry-run exit code (stdout: {out})");
+    let v = assert_envelope(&out, "ori.backend_dispatch.v1");
+    let count = v.get("route_count").and_then(|v| v.as_u64()).unwrap_or(0);
+    assert_eq!(count, 3, "demo storefront should expose 3 dispatch routes");
+    let routes = v
+        .get("routes")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
+    assert_eq!(routes, 3, "routes array length must match route_count");
+}
+
+#[test]
+fn serve_dry_run_envelope_is_byte_stable() {
+    // Two consecutive invocations of the same dry-run dispatcher
+    // must produce identical bytes — the determinism contract from
+    // the M28 milestone.
+    let args = [
+        "serve",
+        "--dry-run",
+        "--module",
+        "examples/demo_store/src/api.ori",
+    ];
+    let (code1, out1) = run(&args);
+    let (code2, out2) = run(&args);
+    assert_eq!(code1, 0);
+    assert_eq!(code2, 0);
+    assert_eq!(out1, out2, "dispatch envelope must be byte-deterministic");
+    assert_envelope(&out1, "ori.backend_dispatch.v1");
+}
+
+/// `ori capability check --dry-run` walks every route/service symbol in
+/// the module, builds a `CallContext` per symbol from the principal and
+/// the `--has` effects, and emits a single `ori.capability_runtime.v1`
+/// envelope. With only `http` held the storefront routes that require
+/// `db.read`/`db.write` must come back as CAP0001 denials.
+#[test]
+fn capability_check_dry_run_emits_runtime_envelope() {
+    let (code, out) = run(&[
+        "capability",
+        "check",
+        "--dry-run",
+        "--module",
+        "examples/demo_store/src/api.ori",
+        "--principal",
+        "alice",
+        "--has",
+        "http",
+    ]);
+    assert_eq!(code, 0, "capability check exit code");
+    let v = assert_envelope(&out, "ori.capability_runtime.v1");
+    let outcomes = v
+        .get("outcomes")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        !outcomes.is_empty(),
+        "expected at least one route outcome, got: {out}"
+    );
+    let denied = outcomes
+        .iter()
+        .filter_map(|entry| entry.pointer("/outcome/code").and_then(|c| c.as_str()))
+        .any(|c| c == "CAP0001");
+    assert!(denied, "expected at least one CAP0001 denial in: {out}");
 }

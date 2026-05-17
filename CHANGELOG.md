@@ -1,5 +1,198 @@
 # CHANGELOG.md
 
+## 2026-05-17 — GOAL v2 waves 2 + 3 (milestones M22, M23, M24, M25, M26, M27, M28, M29, M33, M35)
+
+Ten more parallel agents took the bootstrap from ~493 passing tests to
+**855 passing / 0 failing** across the workspace and added five new schema-
+versioned contracts. `python3.13 scripts/validate_all.py --full` reports
+`validation passed`. The CLI surface picks up four new subcommands.
+
+### Type system (M22)
+- [x] **M22** — body-level type inference in
+  `crates/ori-compiler/src/type_infer.rs`. Binary-op type rules
+  (arithmetic / comparison / logical / coalesce families with cross-
+  defaulting), unary-op rules, expected-type propagation through
+  `let : T = ...` annotations + return positions, lambda body
+  inference with `TypeRef::Fn { params, ret }`. New diagnostics
+  `E0220` (binop mismatch), `E0221` (unop mismatch), `E0222`
+  (return-type mismatch). 23 new tests (`type_infer` lib: 25 → 48).
+
+### Borrow checker (M23)
+- [x] **M23** — region-inference body-level borrow checking in
+  `crates/ori-compiler/src/borrow.rs` + new helper
+  `crates/ori-compiler/src/borrow_regions.rs`. Tracks per-region live
+  borrows, flags `B0060` (move-after-use), `B0070` (mut-after-shared),
+  `B0080` (escapes-region). 12 new tests in `borrow::tests` + 5 in
+  `borrow_regions::tests` + 1 determinism gate. Backward-compatible
+  with the existing signature-level checks (B0010–B0050 untouched).
+
+### Textual codegen (M24)
+- [x] **M24** — round-trip textual emitter
+  (`crates/ori-compiler/src/codegen_text.rs`): every `Expr` variant
+  including `Binary`, `Unary`, `InterpString` (with `{` / `}`
+  escapes), `RawStr` (0–4 hashes), `Tuple`, `Record` (BTreeMap-sorted),
+  `Lambda` (annotations), `Match`. New public helpers
+  `BinOp::lexeme()` / `UnOp::lexeme()`. 14 new round-trip tests
+  (`codegen_text`: 6 → 20).
+
+### Wasm encoder (M25)
+- [x] **M25** — multi-function Wasm encoder
+  (`crates/ori-compiler/src/wasm_encoder.rs`). New types `ValType`,
+  `BlockType`, `WasmFuncType`, `WasmFunc`, `WasmImport`, `WasmExport`,
+  `Instr` (22 opcodes incl. control flow). Public
+  `encode_module(types, funcs, exports, imports) -> Vec<u8>` with
+  type-section dedupe and byte-stable section ordering per binary
+  spec §5.5. 19 new tests (`wasm_encoder`: 19 → 38).
+
+### Async runtime (M26)
+- [x] **M26** — M:N async scheduler
+  (`crates/ori-compiler/src/async_runtime.rs`). New `SchedulerMode`
+  enum (`Deterministic` keeps existing single-thread FIFO;
+  `Parallel { workers }` adds a `std::thread`-based worker pool with
+  `catch_unwind` panic capture). Diagnostics `A0010` (worker_panic),
+  `A0011` (task_starvation), `A0012` (shutdown_timeout), `A0013`
+  (max_workers_exceeded, capped at 256). `AsyncReport` gains
+  `worker_count`, `total_steps`, `total_tasks`, `cancelled`,
+  `panicked`. 10 new tests (`async_runtime`: 10 → 20). Zero new deps.
+
+### Standard distribution (M27)
+- [x] **M27** — honest bodies for stdlib core + std modules:
+  - `stdlib/core/option.ori` — 6 functions (`map`, `unwrap_or`,
+    `is_some`, `is_none`, `and_then`, `or_else`).
+  - `stdlib/core/result.ori` — 7 functions (`map_ok`, `map_err`,
+    `unwrap_or`, `is_ok`, `is_err`, `and_then`, `or_else`).
+  - `stdlib/core/numeric.ori` — `abs`, `min`, `max`, `clamp`,
+    `safe_div`, `safe_mul` using M21a binops.
+  - `stdlib/core/string.ori` — `is_empty`, `non_empty`, `or_default`,
+    `eq` honest bodies; remaining functions tagged `M27-deferred`.
+  - `stdlib/std/validation.ori` — `validate_email`, `validate_length`,
+    `validate_min_length`, `validate_non_empty`, `validate_positive`.
+  - `stdlib/std/url.ori` — `parse(s) -> Result[Url, UrlError]`
+    handling `http://` / `https://`.
+
+### Backend dispatcher (M28)
+- [x] **M28** — runtime dispatcher
+  (`crates/ori-compiler/src/backend_dispatch.rs`). `DispatchTable`
+  built from Service / Route declarations; `dispatch(table, req)`
+  checks path → method → principal → capabilities in order, returns
+  `DispatchError::{NotFound,MethodNotAllowed,MissingPrincipal,MissingCapability}`.
+  New CLI subcommand `ori serve --dry-run --module <path>`. Schema
+  `schemas/backend-dispatch.schema.json` published as
+  `ori.backend_dispatch.v1`. 15 unit tests + 2 CLI smoke tests.
+
+### UI render pipeline (M29)
+- [x] **M29** — render pipeline
+  (`crates/ori-compiler/src/ui_render.rs`). `render_view(view, props)`
+  returns a deterministic `RenderTree`; `diff_trees(old, new)` emits a
+  sorted `Vec<RenderOp>` (`Insert` / `Remove` / `UpdateProp` /
+  `Reorder`) suitable for incremental reconciliation. Diagnostics
+  `RND0001`–`RND0005`. New CLI subcommand
+  `ori ui render --dry-run --module <p> --view <sym>`. Schema
+  `schemas/ui-render.schema.json` published as `ori.ui_render.v1`.
+  17 unit tests + 1 CLI smoke test.
+
+### Model-in-loop telemetry (M33)
+- [x] **M33** — `crates/ori-agent/src/model_loop.rs`.
+  `LoopIteration` / `LoopTotals` / `LoopTelemetry` envelope with
+  per-iteration `edits_proposed`, `edits_accepted`, `edits_rejected`,
+  `tokens_in`, `tokens_out`, `budget_remaining`, `diagnostics_before`,
+  `diagnostics_after`. `build_telemetry` recomputes totals with
+  saturating arithmetic. New CLI subcommand
+  `ori agent telemetry --in <file|->`. Schema
+  `schemas/model-loop-telemetry.schema.json` published as
+  `ori.model_loop_telemetry.v1`. 12 unit tests + 1 CLI smoke test.
+
+### Runtime capability enforcement (M35)
+- [x] **M35** — `crates/ori-compiler/src/capability_runtime.rs`.
+  `CapabilityToken { effect, issued_to, expires_at }`,
+  `CapabilitySet { tokens, denials, audit_required }`,
+  `CallContext { caller_symbol, required_effects, principal_id, capabilities }`,
+  `guard_call(ctx)` / `guard_call_at(ctx, now)` /
+  `guard_call_with_audit(ctx)`. Diagnostics `CAP0001` (missing),
+  `CAP0002` (expired), `CAP0003` (principal_mismatch), `CAP0004`
+  (denied_by_policy), `CAP0005` (audit_required, advisory). New CLI
+  subcommand
+  `ori capability check --dry-run --module <p> --principal <id> --has <effects>`.
+  Schema `schemas/capability-runtime.schema.json` published as
+  `ori.capability_runtime.v1`. 14 unit tests + 1 CLI smoke test.
+
+### Doctor + schema inventory
+- [x] Doctor now lists **40 stable schema-versioned contracts** (was
+  35). New entries: `backend_dispatch`, `capability_runtime`,
+  `model_loop_telemetry`, `sandbox_result`, `ui_render`. Regression
+  test `doctor_report_lists_every_shipped_schema` enforces parity
+  with `schemas/*.schema.json` on disk.
+
+---
+
+## 2026-05-17 — GOAL v2 wave 1 (milestones M21, M30a, M31, M32a, M34, M36, M37)
+
+### Language surface
+- [x] **M21a** — Pratt-style binary + unary operator parser
+  (`crates/ori-compiler/src/parser/expr_ops.rs`). Adds `Expr::Binary`
+  and `Expr::Unary` AST variants, the `BinOp` / `UnOp` enums, precedence
+  and associativity tables, and exhaustive arms across const_fold,
+  effect_propagate, exhaustive, interp_exec, and type_infer.
+- [x] **M21b** — string-literal lexer extensions
+  (`crates/ori-compiler/src/parser/string_lits.rs`). Adds
+  `Expr::InterpString { parts: Vec<InterpPart> }` and
+  `Expr::RawStr { text, hashes }` with `r#"…"#` up to 4 hashes,
+  multi-line strings, and diagnostics `S0001`–`S0006`.
+- [x] **M21c** — extended numeric literal forms with `N0001`–`N0004`
+  diagnostics covering hex / octal / binary / underscore separators
+  / floats with exponents.
+
+### Tooling + IDE
+- [x] **M32a** — VS Code extension scaffold under `extensions/vscode/`
+  and TreeSitter grammar under `extensions/tree-sitter/`. Provides
+  TextMate syntax, language configuration, and a minimum-viable LSP
+  client wired to `ori-lsp`.
+
+### Mobile + UI
+- [x] **M30a** — mobile manifest hardening
+  (`crates/ori-compiler/src/mobile.rs` and `mobile_ui_ir.rs`):
+  schema-stable `MobileManifest` and `NativeUiManifest`, additional
+  `MOB0010`–`MOB0014` diagnostics, fingerprint stability test, byte-
+  identical re-render guarantee.
+
+### Packaging
+- [x] **M31** — version solver + sandbox interface
+  (`crates/ori-pkg/src/version_solver.rs`, `sandbox.rs`, `version.rs`).
+  PubGrub-style backjumping solver, lockfile diff sandbox, schema
+  `schemas/sandbox-result.schema.json` published as
+  `ori.sandbox_result.v1` and added to `ori doctor`.
+
+### CI + golden tests
+- [x] **M34a** — golden diagnostic fixtures under `tests/golden/diagnostics/`
+  with one `.ori` / `.expected.jsonl` pair per diagnostic ID.
+- [x] **M34b** — cross-platform CI matrix
+  (`.github/workflows/test.yml`, `bench-regression.yml`,
+  `conformance.yml`, `security-audit.yml`). Includes `compare_bench.py`
+  with regression / new-suite / removed-suite handling and
+  `docs/CI.md`.
+
+### Self-hosting
+- [x] **M36** — self-hosting design document at
+  `docs/compiler/SELF_HOSTING.md` (1484 lines): Stage 0 → Stage 1 →
+  Stage 2 plan, byte-equality target, bootstrap rebuild process, 8 open
+  questions captured for the maintainer vote.
+
+### Governance + community
+- [x] **M37b** — RFC process at `docs/rfcs/PROCESS.md`, template at
+  `docs/rfcs/0000-template.md`, three seed RFCs (`0001-stable-node-ids`,
+  `0002-capability-secured-effects`, `0003-structural-patch-ir`).
+- [x] **M37b** (governance) — `GOVERNANCE.md` adopts a maintainer-vote
+  process, `CODE_OF_CONDUCT.md` defines reporting + enforcement,
+  `MAINTAINERS.md` lists the seed team with review areas.
+
+### Quality
+- [x] **Stability commitments** — `STABILITY.md` records the tier 1-4
+  compatibility model, semver policy, schema lifecycle (v1 / v2),
+  diagnostic ID stability, deprecation policy, and security exceptions.
+- [x] Workspace test count grew from ~493 → ~665 passing, zero failing.
+
+---
+
 ## 2026-05-16 — End-to-end build-out wave (waves 1 + 2 + 3 + 4)
 
 ### Wave 4 additions (later same day)

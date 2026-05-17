@@ -1,0 +1,6 @@
+{
+  "schema": "ori.patch.v1",
+  "intent": "Op must be an object",
+  "operations": ["bad"],
+  "tests": {"run": []}
+}

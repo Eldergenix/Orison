@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ori.capability_runtime.v1",
+  "title": "Orison Capability Runtime Report v1",
+  "description": "Per-call runtime capability guard outcomes emitted by `ori capability check`.",
+  "type": "object",
+  "required": [
+    "schema",
+    "outcomes"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.capability_runtime.v1"
+    },
+    "outcomes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "index",
+          "outcome"
+        ],
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "outcome": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": ["outcome"],
+                "properties": {
+                  "outcome": { "const": "allowed" }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": ["outcome", "code", "reason"],
+                "properties": {
+                  "outcome": { "const": "denied" },
+                  "code": {
+                    "enum": [
+                      "CAP0001",
+                      "CAP0002",
+                      "CAP0003",
+                      "CAP0004",
+                      "CAP0005"
+                    ]
+                  },
+                  "reason": { "type": "string" }
+                },
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.capability_runtime.v1",
+      "outcomes": [
+        { "index": 0, "outcome": { "outcome": "allowed" } },
+        {
+          "index": 1,
+          "outcome": {
+            "outcome": "denied",
+            "code": "CAP0001",
+            "reason": "principal `alice` is missing a capability token for effect `db.write`"
+          }
+        }
+      ]
+    }
+  ]
+}

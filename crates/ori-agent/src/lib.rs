@@ -7,10 +7,15 @@
 //! `schemas/`.
 
 pub mod extras;
+pub mod model_loop;
 
 pub use extras::{
     agent_diagnose_json, agent_symbol_list_json, doctor_report_json, AgentDiagnose,
     AgentSymbolEntry, AgentSymbolList, DoctorReport, RepairCandidate,
+};
+pub use model_loop::{
+    build_telemetry, iteration_with_saturating_budget, parse_telemetry_json, telemetry_json,
+    LoopIteration, LoopTelemetry, LoopTotals,
 };
 
 use ori_compiler::json::to_json;

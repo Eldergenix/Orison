@@ -1,0 +1,4 @@
+// Triggers D0020: view uses a raw `#ABCDEF` color literal instead of a design token.
+module diag.design_raw_color
+view Hero(title: Str) -> Html uses ui:
+  text(color: "#ABCDEF")

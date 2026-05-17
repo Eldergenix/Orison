@@ -1,0 +1,6 @@
+{
+  "schema": "ori.patch.v1",
+  "intent": "Empty operations",
+  "operations": [],
+  "tests": {"run": []}
+}

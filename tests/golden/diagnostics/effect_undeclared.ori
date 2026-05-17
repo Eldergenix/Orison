@@ -1,0 +1,4 @@
+// Triggers E0410: function uses fs.read but the capability policy declares only net.outbound.
+module diag.effect_undeclared
+fn read_local() -> Int uses fs.read:
+  return 1

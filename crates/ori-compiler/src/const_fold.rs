@@ -90,6 +90,22 @@ fn walk(expr: &Expr) -> Expr {
             params: params.clone(),
             body: Box::new(fold_expr(body)),
         },
+
+        // Interpolated and raw string literals are leaves from the folder's
+        // point of view: no constant folding rule rewrites their contents
+        // (that lives in the string-literals lowering pass).
+        Expr::InterpString { .. } | Expr::RawStr { .. } => expr.clone(),
+
+        Expr::Binary { op, lhs, rhs } => Expr::Binary {
+            op: *op,
+            lhs: Box::new(fold_expr(lhs)),
+            rhs: Box::new(fold_expr(rhs)),
+        },
+
+        Expr::Unary { op, operand } => Expr::Unary {
+            op: *op,
+            operand: Box::new(fold_expr(operand)),
+        },
     }
 }
 

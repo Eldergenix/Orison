@@ -1,0 +1,6 @@
+// Triggers R0003: callee expects 2 args but main passes 1.
+module diag.r0003
+fn add(a: Int, b: Int) -> Int:
+  return a
+fn main() -> Int:
+  return add(1)

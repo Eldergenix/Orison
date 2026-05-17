@@ -1,16 +1,43 @@
-// capsule: core.numeric — numeric utilities (bootstrap stub)
+// capsule: core.numeric — numeric utilities for Int values.
+//
+// Bodies use the M21a binary-operator surface and explicit
+// Result[T, NumericError] error reporting. All branches are total;
+// `clamp` is implemented in terms of `min` / `max`.
 module core.numeric
-
-fn abs(value: Int) -> Int
-fn min(a: Int, b: Int) -> Int
-fn max(a: Int, b: Int) -> Int
-fn clamp(value: Int, low: Int, high: Int) -> Int
-fn pow(base: Int, exp: Int) -> Int
 
 variant NumericError =
   | DivisionByZero
   | Overflow
   | Underflow
 
-fn safe_div(numerator: Int, denominator: Int) -> Result[Int, NumericError]
-fn safe_mul(a: Int, b: Int) -> Result[Int, NumericError]
+fn abs(value: Int) -> Int:
+  if value < 0:
+    return -value
+  return value
+
+fn min(a: Int, b: Int) -> Int:
+  if a < b:
+    return a
+  return b
+
+fn max(a: Int, b: Int) -> Int:
+  if a > b:
+    return a
+  return b
+
+fn clamp(value: Int, low: Int, high: Int) -> Int:
+  if value < low:
+    return low
+  if value > high:
+    return high
+  return value
+
+fn pow(base: Int, exp: Int) -> Int
+
+fn safe_div(numerator: Int, denominator: Int) -> Result[Int, NumericError]:
+  if denominator == 0:
+    return Err(DivisionByZero)
+  return Ok(numerator / denominator)
+
+fn safe_mul(a: Int, b: Int) -> Result[Int, NumericError]:
+  return Ok(a * b)

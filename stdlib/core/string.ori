@@ -1,22 +1,57 @@
 // capsule: core.string — Pure string utilities operating on Str values.
+//
+// Many functions delegate to the runtime `str` capability for primitive
+// implementations (`str.len`, `str.contains`, `str.lower`, `str.upper`).
+// Bodies that the bootstrap cannot yet express are marked M27-deferred
+// and kept as declarations so callers still type-check.
 module core.string
 
 import core.list
 
+// Returns true when `s` is the empty string. Pure equality check that the
+// bootstrap parser handles via the `==` binop (M21a).
+fn is_empty(s: Str) -> Bool:
+  return s == ""
+
+// Returns true when `s` is non-empty. Inverse of `is_empty`.
+fn non_empty(s: Str) -> Bool:
+  return s != ""
+
+// Returns `s` itself when it is non-empty, otherwise `fallback`. Useful
+// when collapsing optional configuration strings to a default.
+fn or_default(s: Str, fallback: Str) -> Str:
+  if s == "":
+    return fallback
+  return s
+
+// Returns true when `a` and `b` are the same string value. Wraps the
+// `==` binop for callers that prefer a named predicate.
+fn eq(a: Str, b: Str) -> Bool:
+  return a == b
+
+// Length in code units. Delegates to the runtime once `str.len` lands.
+// M27-deferred: needs `str` capability primitive in the interp.
 fn len(s: Str) -> Int:
   return 0
 
-fn split(s: Str, sep: Str) -> List[Str]:
-  return List.empty()
-
-fn join(parts: List[Str], sep: Str) -> Str:
-  return ""
-
+// Lowercase form of `s`. M27-deferred: needs Unicode-aware runtime.
 fn to_lower(s: Str) -> Str:
   return s
 
+// Uppercase form of `s`. M27-deferred: needs Unicode-aware runtime.
 fn to_upper(s: Str) -> Str:
   return s
 
+// Returns true when `needle` is a substring of `s`.
+// M27-deferred: needs runtime substring search primitive.
 fn contains(s: Str, needle: Str) -> Bool:
   return false
+
+// Splits `s` on `sep`. M27-deferred: needs runtime split primitive
+// and a List[Str] constructor surface.
+fn split(s: Str, sep: Str) -> List[Str]:
+  return List.empty()
+
+// Joins `parts` with `sep`. M27-deferred: needs runtime join + iter.
+fn join(parts: List[Str], sep: Str) -> Str:
+  return ""

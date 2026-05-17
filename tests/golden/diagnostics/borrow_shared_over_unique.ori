@@ -1,0 +1,4 @@
+// Triggers B0030: Shared[Conn] returned from a function declaring db.write.
+module diag.borrow_shared_over_unique
+fn open_writer() -> Shared[Conn] uses db.write:
+  return Shared.new()

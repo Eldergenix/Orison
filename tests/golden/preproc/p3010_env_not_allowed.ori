@@ -1,0 +1,4 @@
+// Triggers P3010: `${HOME}` reference not in the allow-list.
+module diag.preproc_p3010
+fn announce() -> Str:
+  return ${HOME}

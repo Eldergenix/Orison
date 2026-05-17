@@ -1,0 +1,133 @@
+name: bench-regression
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  bench:
+    name: bench + regression gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      # Override in workflow_dispatch / repo variables to tighten or loosen
+      # the regression threshold (percentage on p50).
+      BENCH_REGRESSION_THRESHOLD: "20"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-bench-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', 'rust-toolchain.toml') }}
+          restore-keys: |
+            cargo-bench-${{ runner.os }}-
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Cargo build --release -p ori
+        run: cargo build --release -p ori
+
+      - name: Run benchmark suite
+        run: target/release/ori bench --samples 50 --json > bench-current.json
+
+      - name: Always upload current bench artefact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-current-${{ github.sha }}
+          path: bench-current.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Resolve main baseline workflow run id
+        if: github.event_name == 'pull_request'
+        id: baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Find the most recent successful bench-regression run on main.
+          # All inputs are controlled (env vars, no untrusted text), so this
+          # is safe against workflow-injection.
+          run_id="$(gh run list \
+            --repo "$REPO" \
+            --workflow bench-regression.yml \
+            --branch main \
+            --status success \
+            --limit 1 \
+            --json databaseId \
+            --jq '.[0].databaseId')"
+          if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
+            echo "No baseline run found on main; regression check will fall back to in-tree baseline."
+            echo "run_id=" >> "$GITHUB_OUTPUT"
+          else
+            echo "Baseline run id: $run_id"
+            echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download main baseline bench artefact
+        if: github.event_name == 'pull_request' && steps.baseline.outputs.run_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: bench-current-${{ steps.baseline.outputs.run_id }}
+          path: baseline
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.baseline.outputs.run_id }}
+
+      - name: Compare against committed baseline (push to main)
+        if: github.event_name == 'push'
+        run: |
+          python3 scripts/compare_bench.py \
+            --baseline BENCHMARKS.results.json \
+            --current bench-current.json \
+            --threshold "${BENCH_REGRESSION_THRESHOLD}" \
+            --markdown bench-report.md
+
+      - name: Compare PR bench against main artefact
+        if: github.event_name == 'pull_request'
+        run: |
+          if [ -f baseline/bench-current.json ]; then
+            python3 scripts/compare_bench.py \
+              --baseline baseline/bench-current.json \
+              --current bench-current.json \
+              --threshold "${BENCH_REGRESSION_THRESHOLD}" \
+              --markdown bench-report.md
+          else
+            echo "::notice::No main baseline available; falling back to in-tree BENCHMARKS.results.json."
+            python3 scripts/compare_bench.py \
+              --baseline BENCHMARKS.results.json \
+              --current bench-current.json \
+              --threshold "${BENCH_REGRESSION_THRESHOLD}" \
+              --markdown bench-report.md
+          fi
+
+      - name: Upload bench report (markdown)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-report-${{ github.sha }}
+          path: bench-report.md
+          if-no-files-found: ignore
+          retention-days: 90

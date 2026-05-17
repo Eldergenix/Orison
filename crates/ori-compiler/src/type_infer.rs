@@ -46,9 +46,26 @@ use crate::ast::{Module, SymbolKind};
 use crate::body::ModuleBodies;
 use crate::diagnostic::Diagnostic;
 use crate::expr::{Expr, Literal, MatchArm, Stmt};
+#[allow(unused_imports)]
+use crate::expr_ops::{BinOp, UnOp};
 use crate::source::Span;
 use crate::types::TypeRef;
 use std::collections::BTreeMap;
+
+// ---------------------------------------------------------------------------
+// Diagnostic ID constants (M22 expression-level inference)
+// ---------------------------------------------------------------------------
+
+/// Type mismatch in a binary operator (`a op b` where `a` and `b` have
+/// incompatible types, or where the operand types don't satisfy the
+/// operator's requirements).
+pub const E_BINOP_TYPE_MISMATCH: &str = "E0220";
+/// Type mismatch in a unary operator (`-` requires numeric, `!` requires
+/// `Bool`).
+pub const E_UNOP_TYPE_MISMATCH: &str = "E0221";
+/// Function body / return-expression type does not unify with the
+/// declared return type.
+pub const E_RETURN_TYPE_MISMATCH: &str = "E0222";
 
 // ---------------------------------------------------------------------------
 // Type environment
@@ -146,11 +163,12 @@ pub fn check_module_bodies(module: &Module, bodies: &ModuleBodies) -> Vec<Diagno
         let (inferred, mut diags) = infer_expr_with_ctx(body, &env, &ctx);
         diagnostics.append(&mut diags);
 
-        if let Some(diag) =
-            mismatch_with_declared_return(&declared_return, &inferred, &symbol.id, &symbol.span)
-        {
-            diagnostics.push(diag);
-        }
+        diagnostics.extend(return_mismatch_diagnostics(
+            &declared_return,
+            &inferred,
+            &symbol.id,
+            &symbol.span,
+        ));
     }
 
     diagnostics
@@ -262,15 +280,13 @@ fn infer_expr_inner(
             // its visible type as the declared return so callers don't see
             // a spurious mismatch on `return`-tail bodies.
             if let Some(inner) = value {
-                let inner_ty = infer_expr_inner(inner, env, ctx, diags);
-                if let Some(diag) = mismatch_with_declared_return(
+                let inner_ty = infer_with_expected(inner, &ctx.declared_return, env, ctx, diags);
+                diags.extend(return_mismatch_diagnostics(
                     &ctx.declared_return,
                     &inner_ty,
                     &ctx.symbol_id,
                     &ctx.symbol_span,
-                ) {
-                    diags.push(diag);
-                }
+                ));
             }
             ctx.declared_return.clone()
         }
@@ -306,12 +322,353 @@ fn infer_expr_inner(
             }
             TypeRef::Unknown
         }
-        Expr::Lambda { body, .. } => {
-            let _ = infer_expr_inner(body, env, ctx, diags);
-            TypeRef::Unknown
+        Expr::Lambda { params, body } => infer_lambda(params, body, env, ctx, diags),
+        // Extended string literals (M21b) always produce `Str`. For
+        // interpolated strings we also walk embedded expressions so
+        // their diagnostics flow up. Sub-expression types may be
+        // anything — they will be `Display`-converted at lowering.
+        Expr::InterpString { parts } => {
+            for part in parts {
+                if let crate::expr::InterpPart::Expr(inner) = part {
+                    let _ = infer_expr_inner(inner, env, ctx, diags);
+                }
+            }
+            TypeRef::Primitive("Str".to_string())
         }
+        Expr::RawStr { .. } => TypeRef::Primitive("Str".to_string()),
+        // Binary / unary operator expressions follow the M22 rule set
+        // implemented in `infer_binary` / `infer_unary`.
+        Expr::Binary { op, lhs, rhs } => infer_binary(*op, lhs, rhs, env, ctx, diags),
+        Expr::Unary { op, operand } => infer_unary(*op, operand, env, ctx, diags),
         Expr::Error => TypeRef::Unknown,
     }
+}
+
+// ---------------------------------------------------------------------------
+// Expected-type propagation, binary / unary / lambda inference (M22)
+// ---------------------------------------------------------------------------
+
+/// Numeric primitive families used by `propagate_expected` to decide
+/// whether a default-typed literal can adopt the expected type.
+fn is_integer_primitive(name: &str) -> bool {
+    matches!(
+        name,
+        "Int"
+            | "Int8"
+            | "Int16"
+            | "Int32"
+            | "Int64"
+            | "UInt"
+            | "UInt8"
+            | "UInt16"
+            | "UInt32"
+            | "UInt64"
+    )
+}
+
+fn is_float_primitive(name: &str) -> bool {
+    matches!(name, "Float" | "Float32" | "Float64" | "Decimal")
+}
+
+fn is_numeric_type(ty: &TypeRef) -> bool {
+    match ty {
+        TypeRef::Primitive(name) | TypeRef::Named(name) => {
+            is_integer_primitive(name) || is_float_primitive(name)
+        }
+        _ => false,
+    }
+}
+
+fn is_integer_type(ty: &TypeRef) -> bool {
+    match ty {
+        TypeRef::Primitive(name) | TypeRef::Named(name) => is_integer_primitive(name),
+        _ => false,
+    }
+}
+
+fn is_float_type(ty: &TypeRef) -> bool {
+    match ty {
+        TypeRef::Primitive(name) | TypeRef::Named(name) => is_float_primitive(name),
+        _ => false,
+    }
+}
+
+fn is_bool_type(ty: &TypeRef) -> bool {
+    matches!(ty, TypeRef::Primitive(name) | TypeRef::Named(name) if name == "Bool")
+}
+
+fn is_string_type(ty: &TypeRef) -> bool {
+    matches!(ty, TypeRef::Primitive(name) | TypeRef::Named(name) if name == "Str" || name == "String")
+}
+
+/// Default the type of a context-sensitive literal expression when the
+/// surrounding context (let-annotation, return-type, expected operand)
+/// constrains it to a specific numeric primitive. Returns the propagated
+/// type, or `None` when no propagation applies (caller falls back to the
+/// regular [`infer_expr`] result).
+pub fn propagate_expected(expr: &Expr, expected: &TypeRef) -> Option<TypeRef> {
+    match expr {
+        Expr::Lit(Literal::Int(_)) if is_integer_type(expected) || is_float_type(expected) => {
+            Some(expected.clone())
+        }
+        Expr::Lit(Literal::Float(_)) if is_float_type(expected) => Some(expected.clone()),
+        Expr::Unary {
+            op: UnOp::Neg,
+            operand,
+        } => propagate_expected(operand, expected),
+        _ => None,
+    }
+}
+
+/// Infer the type of `expr` against an expected type, propagating numeric
+/// defaulting where applicable. Falls back to plain [`infer_expr_inner`]
+/// when the expected type is `Unknown` or no defaulting rule applies.
+#[allow(dead_code)]
+fn infer_with_expected(
+    expr: &Expr,
+    expected: &TypeRef,
+    env: &TypeEnv,
+    ctx: &InferContext<'_>,
+    diags: &mut Vec<Diagnostic>,
+) -> TypeRef {
+    let inferred = infer_expr_inner(expr, env, ctx, diags);
+    if matches!(expected, TypeRef::Unknown) {
+        return inferred;
+    }
+    if let Some(refined) = propagate_expected(expr, expected) {
+        return refined;
+    }
+    inferred
+}
+
+fn binop_lexeme(op: BinOp) -> &'static str {
+    match op {
+        BinOp::Add => "+",
+        BinOp::Sub => "-",
+        BinOp::Mul => "*",
+        BinOp::Div => "/",
+        BinOp::Rem => "%",
+        BinOp::Eq => "==",
+        BinOp::Ne => "!=",
+        BinOp::Lt => "<",
+        BinOp::Le => "<=",
+        BinOp::Gt => ">",
+        BinOp::Ge => ">=",
+        BinOp::And => "&&",
+        BinOp::Or => "||",
+        BinOp::Coalesce => "??",
+    }
+}
+
+fn unop_lexeme(op: UnOp) -> &'static str {
+    match op {
+        UnOp::Neg => "-",
+        UnOp::Not => "!",
+    }
+}
+
+/// Classify a binary operator into one of the type-rule families used
+/// by [`infer_binary`].
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BinOpFamily {
+    /// Numeric `+`-family arithmetic (`+`, `-`, `*`, `/`, `%`). For `+`
+    /// only, `Str + Str` is additionally allowed.
+    Arith,
+    /// Comparison ops that return `Bool`.
+    Compare,
+    /// Logical ops requiring `Bool` operands.
+    Logical,
+    /// Null-coalescing `??`.
+    Coalesce,
+}
+
+fn binop_family(op: BinOp) -> BinOpFamily {
+    match op {
+        BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem => BinOpFamily::Arith,
+        BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
+            BinOpFamily::Compare
+        }
+        BinOp::And | BinOp::Or => BinOpFamily::Logical,
+        BinOp::Coalesce => BinOpFamily::Coalesce,
+    }
+}
+
+fn infer_binary(
+    op: BinOp,
+    lhs: &Expr,
+    rhs: &Expr,
+    env: &TypeEnv,
+    ctx: &InferContext<'_>,
+    diags: &mut Vec<Diagnostic>,
+) -> TypeRef {
+    // Infer each side independently so their own diagnostics surface.
+    let mut lhs_ty = infer_expr_inner(lhs, env, ctx, diags);
+    let mut rhs_ty = infer_expr_inner(rhs, env, ctx, diags);
+    // Cross-defaulting: a numeric literal on one side adopts the other
+    // side's concrete numeric type so `1 + (x: Int32)` becomes
+    // `Int32 + Int32` even though `1` defaults to `Int` on its own.
+    if is_numeric_type(&rhs_ty) {
+        if let Some(refined) = propagate_expected(lhs, &rhs_ty) {
+            lhs_ty = refined;
+        }
+    }
+    if is_numeric_type(&lhs_ty) {
+        if let Some(refined) = propagate_expected(rhs, &lhs_ty) {
+            rhs_ty = refined;
+        }
+    }
+    let family = binop_family(op);
+    match family {
+        BinOpFamily::Arith => {
+            // Special case: `+` allows `Str + Str` concatenation.
+            if op == BinOp::Add && is_string_type(&lhs_ty) && is_string_type(&rhs_ty) {
+                return lhs_ty;
+            }
+            if is_numeric_type(&lhs_ty) && is_numeric_type(&rhs_ty) && lhs_ty == rhs_ty {
+                return lhs_ty;
+            }
+            // Either side Unknown → produce the concrete side without
+            // emitting a mismatch, preserving monotonicity.
+            if matches!(lhs_ty, TypeRef::Unknown) || matches!(rhs_ty, TypeRef::Unknown) {
+                if is_numeric_type(&lhs_ty) {
+                    return lhs_ty;
+                }
+                if is_numeric_type(&rhs_ty) {
+                    return rhs_ty;
+                }
+                return TypeRef::Unknown;
+            }
+            diags.push(binop_mismatch_diag(op, &lhs_ty, &rhs_ty, ctx));
+            TypeRef::Unknown
+        }
+        BinOpFamily::Compare => {
+            if lhs_ty == rhs_ty
+                || matches!(lhs_ty, TypeRef::Unknown)
+                || matches!(rhs_ty, TypeRef::Unknown)
+            {
+                return TypeRef::Primitive("Bool".to_string());
+            }
+            diags.push(binop_mismatch_diag(op, &lhs_ty, &rhs_ty, ctx));
+            TypeRef::Primitive("Bool".to_string())
+        }
+        BinOpFamily::Logical => {
+            if (is_bool_type(&lhs_ty) || matches!(lhs_ty, TypeRef::Unknown))
+                && (is_bool_type(&rhs_ty) || matches!(rhs_ty, TypeRef::Unknown))
+            {
+                return TypeRef::Primitive("Bool".to_string());
+            }
+            diags.push(binop_mismatch_diag(op, &lhs_ty, &rhs_ty, ctx));
+            TypeRef::Primitive("Bool".to_string())
+        }
+        BinOpFamily::Coalesce => {
+            if !matches!(rhs_ty, TypeRef::Unknown) {
+                rhs_ty
+            } else {
+                lhs_ty
+            }
+        }
+    }
+}
+
+fn infer_unary(
+    op: UnOp,
+    operand: &Expr,
+    env: &TypeEnv,
+    ctx: &InferContext<'_>,
+    diags: &mut Vec<Diagnostic>,
+) -> TypeRef {
+    let operand_ty = infer_expr_inner(operand, env, ctx, diags);
+    match op {
+        UnOp::Neg => {
+            if is_numeric_type(&operand_ty) {
+                operand_ty
+            } else if matches!(operand_ty, TypeRef::Unknown) {
+                TypeRef::Unknown
+            } else {
+                diags.push(unop_mismatch_diag(op, &operand_ty, ctx));
+                TypeRef::Unknown
+            }
+        }
+        UnOp::Not => {
+            if is_bool_type(&operand_ty) || matches!(operand_ty, TypeRef::Unknown) {
+                TypeRef::Primitive("Bool".to_string())
+            } else {
+                diags.push(unop_mismatch_diag(op, &operand_ty, ctx));
+                TypeRef::Primitive("Bool".to_string())
+            }
+        }
+    }
+}
+
+fn infer_lambda(
+    params: &[(String, Option<TypeRef>)],
+    body: &Expr,
+    env: &TypeEnv,
+    ctx: &InferContext<'_>,
+    diags: &mut Vec<Diagnostic>,
+) -> TypeRef {
+    let mut child = TypeEnv::with_parent(env.clone());
+    let mut param_types: Vec<TypeRef> = Vec::with_capacity(params.len());
+    for (name, annot) in params {
+        let pty = match annot {
+            Some(t) if !matches!(t, TypeRef::Unknown) => t.clone(),
+            _ => TypeRef::Unknown,
+        };
+        child.bind(name.clone(), pty.clone());
+        param_types.push(pty);
+    }
+    let body_ty = infer_expr_inner(body, &child, ctx, diags);
+    TypeRef::Fn {
+        params: param_types,
+        ret: Box::new(body_ty),
+    }
+}
+
+fn binop_mismatch_diag(
+    op: BinOp,
+    lhs: &TypeRef,
+    rhs: &TypeRef,
+    ctx: &InferContext<'_>,
+) -> Diagnostic {
+    Diagnostic::error(
+        E_BINOP_TYPE_MISMATCH,
+        format!(
+            "type mismatch in binary op `{}`: lhs `{}`, rhs `{}`",
+            binop_lexeme(op),
+            lhs.display(),
+            rhs.display()
+        ),
+        ctx.symbol_span.clone(),
+    )
+    .with_symbol(ctx.symbol_id.clone())
+    .with_expected(vec![lhs.display()])
+    .with_found(vec![rhs.display()])
+    .with_agent_summary(
+        "Use matching operand types, or insert an explicit conversion so both sides agree.",
+    )
+    .with_docs(vec!["doc:types.binary-ops".to_string()])
+}
+
+fn unop_mismatch_diag(op: UnOp, operand: &TypeRef, ctx: &InferContext<'_>) -> Diagnostic {
+    let expected = match op {
+        UnOp::Neg => "a numeric type",
+        UnOp::Not => "Bool",
+    };
+    Diagnostic::error(
+        E_UNOP_TYPE_MISMATCH,
+        format!(
+            "type mismatch in unary op `{}`: expected {}, found `{}`",
+            unop_lexeme(op),
+            expected,
+            operand.display()
+        ),
+        ctx.symbol_span.clone(),
+    )
+    .with_symbol(ctx.symbol_id.clone())
+    .with_expected(vec![expected.to_string()])
+    .with_found(vec![operand.display()])
+    .with_agent_summary("Convert the operand to the required type or use a different operator.")
+    .with_docs(vec!["doc:types.unary-ops".to_string()])
 }
 
 fn infer_literal(lit: &Literal) -> TypeRef {
@@ -335,7 +692,16 @@ fn infer_block(
     for stmt in stmts {
         match stmt {
             Stmt::Let { name, ty, init } => {
-                let init_ty = infer_expr_inner(init, &child, ctx, diags);
+                // When the let has an explicit annotation, push it into the
+                // initializer as the *expected* type so numeric literals
+                // default to the annotated primitive
+                // (e.g. `let x: Int32 = 1` infers `1: Int32`).
+                let init_ty = match ty {
+                    Some(annot) if !matches!(annot, TypeRef::Unknown) => {
+                        infer_with_expected(init, annot, &child, ctx, diags)
+                    }
+                    _ => infer_expr_inner(init, &child, ctx, diags),
+                };
                 // Prefer the explicit annotation when present; fall back to
                 // the inferred type, and finally `Unknown` so monotonicity
                 // is preserved.
@@ -350,21 +716,20 @@ fn infer_block(
             }
             Stmt::Return(value) => {
                 if let Some(inner) = value {
-                    let inner_ty = infer_expr_inner(inner, &child, ctx, diags);
-                    if let Some(diag) = mismatch_with_declared_return(
+                    let inner_ty =
+                        infer_with_expected(inner, &ctx.declared_return, &child, ctx, diags);
+                    diags.extend(return_mismatch_diagnostics(
                         &ctx.declared_return,
                         &inner_ty,
                         &ctx.symbol_id,
                         &ctx.symbol_span,
-                    ) {
-                        diags.push(diag);
-                    }
+                    ));
                 }
             }
         }
     }
     match tail {
-        Some(expr) => infer_expr_inner(expr, &child, ctx, diags),
+        Some(expr) => infer_with_expected(expr, &ctx.declared_return, &child, ctx, diags),
         None => TypeRef::Primitive("Unit".to_string()),
     }
 }
@@ -499,6 +864,7 @@ fn unify_branches(
     }
 }
 
+#[allow(dead_code)]
 fn mismatch_with_declared_return(
     declared: &TypeRef,
     inferred: &TypeRef,
@@ -529,6 +895,63 @@ fn mismatch_with_declared_return(
         )
         .with_docs(vec!["doc:types.return".to_string()]),
     )
+}
+
+/// Stricter return-type check that emits the M22 `E0222` error whenever
+/// the inferred type cannot unify with the declared return type. Returns
+/// both the legacy `W0540` warning **and** the new error so existing
+/// callers that already test for `W0540` keep working while agents can
+/// react to the structured `E0222` ID.
+fn return_mismatch_diagnostics(
+    declared: &TypeRef,
+    inferred: &TypeRef,
+    symbol_id: &str,
+    span: &Span,
+) -> Vec<Diagnostic> {
+    if matches!(declared, TypeRef::Unknown) || matches!(inferred, TypeRef::Unknown) {
+        return Vec::new();
+    }
+    if return_types_compatible(declared, inferred) {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    out.push(
+        Diagnostic::warning(
+            "W0540",
+            format!(
+                "function body produces `{}` but signature declares `{}`",
+                inferred.display(),
+                declared.display()
+            ),
+            span.clone(),
+        )
+        .with_symbol(symbol_id.to_string())
+        .with_expected(vec![declared.display()])
+        .with_found(vec![inferred.display()])
+        .with_agent_summary(
+            "Adjust the body or the return type so the signature and the value agree.",
+        )
+        .with_docs(vec!["doc:types.return".to_string()]),
+    );
+    out.push(
+        Diagnostic::error(
+            E_RETURN_TYPE_MISMATCH,
+            format!(
+                "return type mismatch: expected `{}`, found `{}`",
+                declared.display(),
+                inferred.display()
+            ),
+            span.clone(),
+        )
+        .with_symbol(symbol_id.to_string())
+        .with_expected(vec![declared.display()])
+        .with_found(vec![inferred.display()])
+        .with_agent_summary(
+            "Change the returned expression to match the declared return type, or update the signature.",
+        )
+        .with_docs(vec!["doc:types.return".to_string()]),
+    );
+    out
 }
 
 /// Compatibility relation between declared and inferred return types.
@@ -1048,5 +1471,274 @@ mod tests {
         assert!(!diags.iter().any(|d| d.id == "W0541"));
         // The unknown identifier still surfaces its own diagnostic.
         assert!(diags.iter().any(|d| d.id == "W0530"));
+    }
+
+    // ---- M22: binary / unary operator rules ----
+
+    fn bin(op: BinOp, lhs: Expr, rhs: Expr) -> Expr {
+        Expr::Binary {
+            op,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        }
+    }
+
+    fn un(op: UnOp, operand: Expr) -> Expr {
+        Expr::Unary {
+            op,
+            operand: Box::new(operand),
+        }
+    }
+
+    fn int(v: i64) -> Expr {
+        Expr::Lit(Literal::Int(v))
+    }
+
+    fn str_lit(v: &str) -> Expr {
+        Expr::Lit(Literal::Str(v.into()))
+    }
+
+    fn boolean(v: bool) -> Expr {
+        Expr::Lit(Literal::Bool(v))
+    }
+
+    #[test]
+    fn binary_int_plus_int_is_int() {
+        let env = TypeEnv::new();
+        let (ty, diags) = infer_expr(&bin(BinOp::Add, int(1), int(2)), &env);
+        must_be(&ty, "Int");
+        assert!(!diags.iter().any(|d| d.id == E_BINOP_TYPE_MISMATCH));
+    }
+
+    #[test]
+    fn binary_string_plus_string_is_str() {
+        let env = TypeEnv::new();
+        let (ty, diags) = infer_expr(&bin(BinOp::Add, str_lit("hello "), str_lit("world")), &env);
+        must_be(&ty, "Str");
+        assert!(!diags.iter().any(|d| d.id == E_BINOP_TYPE_MISMATCH));
+    }
+
+    #[test]
+    fn binary_int_plus_string_emits_e0220() {
+        let env = TypeEnv::new();
+        let (_, diags) = infer_expr(&bin(BinOp::Add, int(1), str_lit("oops")), &env);
+        assert!(diags.iter().any(|d| d.id == E_BINOP_TYPE_MISMATCH));
+        assert!(diags
+            .iter()
+            .any(|d| d.id == E_BINOP_TYPE_MISMATCH && d.expected == vec!["Int".to_string()]));
+    }
+
+    #[test]
+    fn binary_comparison_returns_bool() {
+        let env = TypeEnv::new();
+        let (ty, diags) = infer_expr(&bin(BinOp::Lt, int(1), int(2)), &env);
+        must_be(&ty, "Bool");
+        assert!(!diags.iter().any(|d| d.id == E_BINOP_TYPE_MISMATCH));
+    }
+
+    #[test]
+    fn binary_equality_on_strings_is_bool() {
+        let env = TypeEnv::new();
+        let (ty, _) = infer_expr(&bin(BinOp::Eq, str_lit("a"), str_lit("a")), &env);
+        must_be(&ty, "Bool");
+    }
+
+    #[test]
+    fn binary_logical_and_requires_bool() {
+        let env = TypeEnv::new();
+        let (ty, diags) = infer_expr(&bin(BinOp::And, boolean(true), boolean(false)), &env);
+        must_be(&ty, "Bool");
+        assert!(!diags.iter().any(|d| d.id == E_BINOP_TYPE_MISMATCH));
+    }
+
+    #[test]
+    fn binary_logical_or_on_int_emits_e0220() {
+        let env = TypeEnv::new();
+        let (ty, diags) = infer_expr(&bin(BinOp::Or, int(1), boolean(true)), &env);
+        // Logical ops always produce Bool, but the lhs is not Bool → mismatch.
+        must_be(&ty, "Bool");
+        assert!(diags.iter().any(|d| d.id == E_BINOP_TYPE_MISMATCH));
+    }
+
+    #[test]
+    fn unary_neg_on_int_is_int() {
+        let env = TypeEnv::new();
+        let (ty, diags) = infer_expr(&un(UnOp::Neg, int(5)), &env);
+        must_be(&ty, "Int");
+        assert!(!diags.iter().any(|d| d.id == E_UNOP_TYPE_MISMATCH));
+    }
+
+    #[test]
+    fn unary_not_on_bool_is_bool() {
+        let env = TypeEnv::new();
+        let (ty, diags) = infer_expr(&un(UnOp::Not, boolean(true)), &env);
+        must_be(&ty, "Bool");
+        assert!(!diags.iter().any(|d| d.id == E_UNOP_TYPE_MISMATCH));
+    }
+
+    #[test]
+    fn unary_not_on_int_emits_e0221() {
+        let env = TypeEnv::new();
+        let (ty, diags) = infer_expr(&un(UnOp::Not, int(5)), &env);
+        // `!` always returns Bool, but the operand mismatches.
+        must_be(&ty, "Bool");
+        assert!(diags.iter().any(|d| d.id == E_UNOP_TYPE_MISMATCH));
+    }
+
+    #[test]
+    fn unary_neg_on_string_emits_e0221() {
+        let env = TypeEnv::new();
+        let (_, diags) = infer_expr(&un(UnOp::Neg, str_lit("oops")), &env);
+        assert!(diags.iter().any(|d| d.id == E_UNOP_TYPE_MISMATCH));
+    }
+
+    // ---- M22: interpolated and raw strings ----
+
+    #[test]
+    fn interp_string_is_str_and_equality_is_bool() {
+        let env = TypeEnv::new();
+        let interp = Expr::InterpString {
+            parts: vec![
+                crate::expr::InterpPart::Lit("hello ".into()),
+                crate::expr::InterpPart::Expr(Box::new(int(42))),
+            ],
+        };
+        let (ty, _) = infer_expr(&interp, &env);
+        must_be(&ty, "Str");
+        // `interp == "literal"` is comparing two strings → Bool.
+        let cmp = bin(BinOp::Eq, interp, str_lit("hello 42"));
+        let (cmp_ty, diags) = infer_expr(&cmp, &env);
+        must_be(&cmp_ty, "Bool");
+        assert!(!diags.iter().any(|d| d.id == E_BINOP_TYPE_MISMATCH));
+    }
+
+    #[test]
+    fn raw_string_is_str() {
+        let env = TypeEnv::new();
+        let raw = Expr::RawStr {
+            text: "verbatim".into(),
+            hashes: 0,
+        };
+        let (ty, _) = infer_expr(&raw, &env);
+        must_be(&ty, "Str");
+    }
+
+    // ---- M22: lambda inference ----
+
+    #[test]
+    fn lambda_with_explicit_params_infers_fn_type() {
+        let env = TypeEnv::new();
+        let lambda = Expr::Lambda {
+            params: vec![
+                ("a".into(), Some(TypeRef::Primitive("Int".into()))),
+                ("b".into(), Some(TypeRef::Primitive("Int".into()))),
+            ],
+            body: Box::new(bin(
+                BinOp::Add,
+                Expr::Var("a".into()),
+                Expr::Var("b".into()),
+            )),
+        };
+        let (ty, diags) = infer_expr(&lambda, &env);
+        must_be(&ty, "Fn(Int, Int) -> Int");
+        assert!(diags.is_empty());
+    }
+
+    #[test]
+    fn lambda_body_type_mismatch_propagates_diagnostic() {
+        let env = TypeEnv::new();
+        // The body adds an Int and a Str → E0220 from the inner binary op.
+        let lambda = Expr::Lambda {
+            params: vec![("a".into(), Some(TypeRef::Primitive("Int".into())))],
+            body: Box::new(bin(BinOp::Add, Expr::Var("a".into()), str_lit("oops"))),
+        };
+        let (ty, diags) = infer_expr(&lambda, &env);
+        // The lambda still types out (return is Unknown after the inner mismatch).
+        assert!(matches!(ty, TypeRef::Fn { .. }));
+        assert!(diags.iter().any(|d| d.id == E_BINOP_TYPE_MISMATCH));
+    }
+
+    #[test]
+    fn lambda_without_annotations_has_unknown_param_types() {
+        let env = TypeEnv::new();
+        let lambda = Expr::Lambda {
+            params: vec![("x".into(), None)],
+            body: Box::new(Expr::Var("x".into())),
+        };
+        let (ty, _) = infer_expr(&lambda, &env);
+        must_be(&ty, "Fn(_) -> _");
+    }
+
+    // ---- M22: return-type unification with E0222 ----
+
+    #[test]
+    fn return_type_mismatch_emits_e0222() {
+        let src = SourceFile::new("/t.ori", "module a\nfn f() -> Int:\n  return \"oops\"\n");
+        let module = parse_source(&src).module;
+        let bodies = parse_module_bodies(&src);
+        let diags = check_module_bodies(&module, &bodies);
+        assert!(diags.iter().any(|d| d.id == E_RETURN_TYPE_MISMATCH));
+    }
+
+    #[test]
+    fn return_type_match_does_not_emit_e0222() {
+        let src = SourceFile::new("/t.ori", "module a\nfn f() -> Int:\n  return 0\n");
+        let module = parse_source(&src).module;
+        let bodies = parse_module_bodies(&src);
+        let diags = check_module_bodies(&module, &bodies);
+        assert!(!diags.iter().any(|d| d.id == E_RETURN_TYPE_MISMATCH));
+    }
+
+    // ---- M22: numeric literal defaulting in let context ----
+
+    #[test]
+    fn let_annotation_defaults_int_literal_to_annotated_type() {
+        let env = TypeEnv::new();
+        // Block: `{ let x: Int32 = 1; x }` — the tail `x` should adopt `Int32`.
+        let block = Expr::Block {
+            stmts: vec![Stmt::Let {
+                name: "x".into(),
+                ty: Some(TypeRef::Primitive("Int32".into())),
+                init: int(1),
+            }],
+            tail: Some(Box::new(Expr::Var("x".into()))),
+        };
+        let (ty, _) = infer_expr(&block, &env);
+        must_be(&ty, "Int32");
+    }
+
+    #[test]
+    fn propagate_expected_refines_int_literal_to_float() {
+        let propagated = propagate_expected(&int(1), &TypeRef::Primitive("Float64".into()))
+            .unwrap_or(TypeRef::Unknown);
+        must_be(&propagated, "Float64");
+    }
+
+    #[test]
+    fn propagate_expected_leaves_non_literals_alone() {
+        let propagated = propagate_expected(&str_lit("hi"), &TypeRef::Primitive("Str".into()));
+        assert!(propagated.is_none());
+    }
+
+    // ---- M22: precedence / right-folding ----
+
+    #[test]
+    fn multi_arg_binary_right_folded_a_plus_b_plus_c_is_int() {
+        // Verify that `a + (b + c)` (a right-folded shape) types out to `Int`
+        // without any mismatch diagnostics. The Pratt parser produces a
+        // left-folded shape for left-associative `+`, but the inferer must
+        // accept either folding direction since it's just structural recursion.
+        let env = TypeEnv::new();
+        let expr = bin(BinOp::Add, int(1), bin(BinOp::Add, int(2), int(3)));
+        let (ty, diags) = infer_expr(&expr, &env);
+        must_be(&ty, "Int");
+        assert!(!diags.iter().any(|d| d.id == E_BINOP_TYPE_MISMATCH));
+    }
+
+    #[test]
+    fn diagnostic_ids_are_stable() {
+        assert_eq!(E_BINOP_TYPE_MISMATCH, "E0220");
+        assert_eq!(E_UNOP_TYPE_MISMATCH, "E0221");
+        assert_eq!(E_RETURN_TYPE_MISMATCH, "E0222");
     }
 }

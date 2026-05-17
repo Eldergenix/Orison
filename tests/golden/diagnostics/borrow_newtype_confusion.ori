@@ -1,0 +1,6 @@
+// Triggers B0020: ProductId and OrderId both wrap Str and appear in one signature.
+module diag.borrow_newtype
+type ProductId wraps Str
+type OrderId wraps Str
+fn link(a: ProductId, b: OrderId) -> Unit:
+  return Unit

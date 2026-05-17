@@ -23,6 +23,7 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 
 use crate::toml_lite::{self, TomlError, TomlValue};
+use crate::version::{parse_constraint, VersionConstraint, VersionError};
 
 /// Current manifest schema identifier.
 pub const MANIFEST_SCHEMA: &str = "ori.manifest.v1";
@@ -175,16 +176,38 @@ pub struct CapabilityDecls {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum DepSpec {
-    /// Plain version requirement (e.g. `"0.2.1"`).
+    /// Plain version requirement (e.g. `"0.2.1"`, `"^1.2.3"`, `"~2.0.0"`).
+    /// The wire format is a string; [`DepSpec::constraint`] parses it into a
+    /// strongly-typed [`VersionConstraint`].
     Version(String),
-    /// Local path with optional version pin.
+    /// Local path with optional version constraint.
     Path {
         /// Filesystem path, resolved relative to the manifest directory.
         path: String,
-        /// Optional version pin that must match the dependency's manifest.
+        /// Optional version constraint. When present and the dep is path-
+        /// based, the path manifest's version must satisfy this constraint.
         #[serde(skip_serializing_if = "Option::is_none", default)]
         version: Option<String>,
     },
+}
+
+impl DepSpec {
+    /// Return the version-requirement string carried by this spec, if any.
+    pub fn version_text(&self) -> Option<&str> {
+        match self {
+            DepSpec::Version(v) => Some(v.as_str()),
+            DepSpec::Path { version, .. } => version.as_deref(),
+        }
+    }
+
+    /// Parse the version requirement as a [`VersionConstraint`]. Returns
+    /// `Ok(None)` for path-only deps with no version pin.
+    pub fn constraint(&self) -> Result<Option<VersionConstraint>, VersionError> {
+        match self.version_text() {
+            None => Ok(None),
+            Some(text) => parse_constraint(text).map(Some),
+        }
+    }
 }
 
 /// Parsed manifest.
@@ -430,6 +453,17 @@ impl Manifest {
                         },
                     ));
                 }
+                // Parse the requirement as a version constraint so callers
+                // never see syntactically-invalid `^foo` strings escape the
+                // manifest layer. Plain `X.Y.Z` parses as `Exact`.
+                if let Err(err) = parse_constraint(v) {
+                    return Err(ManifestError::validation(
+                        ManifestErrorKind::InvalidDependency {
+                            name: dep_name.clone(),
+                            reason: format!("invalid version requirement `{v}`: {err}"),
+                        },
+                    ));
+                }
             }
             if let DepSpec::Path { path, version } = dep {
                 if path.trim().is_empty() {
@@ -441,7 +475,16 @@ impl Manifest {
                     ));
                 }
                 if let Some(v) = version {
-                    validate_version(v)?;
+                    // Path-dep `version` may be either a strict pin (X.Y.Z) or
+                    // a constraint expression — parse_constraint accepts both.
+                    if let Err(err) = parse_constraint(v) {
+                        return Err(ManifestError::validation(
+                            ManifestErrorKind::InvalidDependency {
+                                name: dep_name.clone(),
+                                reason: format!("invalid version constraint `{v}`: {err}"),
+                            },
+                        ));
+                    }
                 }
             }
         }

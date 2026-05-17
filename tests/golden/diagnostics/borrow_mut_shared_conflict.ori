@@ -1,0 +1,4 @@
+// Triggers B0011: same identifier `x` is borrowed both shared and mutably.
+module diag.borrow_mut_shared_conflict
+fn touch(x: &Int, x: &mut Int) -> Unit:
+  return Unit

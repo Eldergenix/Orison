@@ -15,6 +15,15 @@ pub enum TypeRef {
         /// Type arguments in source order.
         args: Vec<TypeRef>,
     },
+    /// Function type `Fn(params...) -> ret`. Introduced by lambda
+    /// inference in [`crate::type_infer`]. Existing variants are
+    /// preserved so this is purely additive.
+    Fn {
+        /// Parameter types in source order.
+        params: Vec<TypeRef>,
+        /// Return type.
+        ret: Box<TypeRef>,
+    },
     /// Placeholder used by the inferencer for not-yet-resolved types.
     Unknown,
 }
@@ -31,6 +40,14 @@ impl TypeRef {
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("{name}[{inner}]")
+            }
+            TypeRef::Fn { params, ret } => {
+                let inner = params
+                    .iter()
+                    .map(TypeRef::display)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("Fn({inner}) -> {}", ret.display())
             }
             TypeRef::Unknown => "_".to_string(),
         }

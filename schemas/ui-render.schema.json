@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.dev/schemas/ui-render.schema.json",
+  "title": "Orison UI Render Tree v1",
+  "type": "object",
+  "required": ["schema", "root", "stats"],
+  "properties": {
+    "schema": { "const": "ori.ui_render.v1" },
+    "root": { "$ref": "#/$defs/viewNode" },
+    "stats": {
+      "type": "object",
+      "required": ["node_count", "depth", "keyed_nodes", "unkeyed_nodes"],
+      "properties": {
+        "node_count": { "type": "integer", "minimum": 0 },
+        "depth": { "type": "integer", "minimum": 0 },
+        "keyed_nodes": { "type": "integer", "minimum": 0 },
+        "unkeyed_nodes": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "propValue": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["str", "int", "bool", "null"] },
+        "value": {}
+      },
+      "additionalProperties": false
+    },
+    "viewNode": {
+      "type": "object",
+      "required": ["kind", "props", "children"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1 },
+        "key": { "type": ["string", "null"] },
+        "props": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/propValue" }
+        },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/viewNode" }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "examples": [
+    {
+      "schema": "ori.ui_render.v1",
+      "root": {
+        "kind": "Hello",
+        "props": {
+          "name": { "type": "str", "value": "ada" }
+        },
+        "children": []
+      },
+      "stats": {
+        "node_count": 1,
+        "depth": 1,
+        "keyed_nodes": 0,
+        "unkeyed_nodes": 1
+      }
+    }
+  ]
+}

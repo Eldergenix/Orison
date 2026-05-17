@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.dev/schemas/native-ui-manifest.schema.json",
+  "title": "Orison Native UI Manifest v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "target",
+    "views"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.native_ui_manifest.v1"
+    },
+    "target": {
+      "enum": [
+        "ios-uikit",
+        "ios-swiftui",
+        "android-compose",
+        "android-view"
+      ]
+    },
+    "views": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "component",
+          "symbol",
+          "view_name",
+          "props_mapping"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "ios-uikit",
+              "ios-swiftui",
+              "android-compose",
+              "android-view"
+            ]
+          },
+          "component": {
+            "type": "string",
+            "minLength": 1
+          },
+          "symbol": {
+            "type": "string",
+            "minLength": 1
+          },
+          "view_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "props_mapping": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.native_ui_manifest.v1",
+      "target": "ios-uikit",
+      "views": [
+        {
+          "kind": "ios-uikit",
+          "component": "UIViewController",
+          "symbol": "sym:demo_store.ui.ProductDetail",
+          "view_name": "ProductDetail",
+          "props_mapping": {
+            "product": "UIViewController.productDataSource"
+          }
+        }
+      ]
+    }
+  ]
+}

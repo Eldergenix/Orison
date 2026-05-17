@@ -1,0 +1,65 @@
+name: conformance
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  conformance:
+    name: cargo test --test conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-conformance-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', 'rust-toolchain.toml') }}
+          restore-keys: |
+            cargo-conformance-${{ runner.os }}-
+
+      - name: Run conformance suite
+        # `--test conformance` resolves to the conformance integration test
+        # in ori-compiler. `--nocapture` keeps the failing-fixture diff
+        # visible in the workflow log even when the test fails.
+        run: cargo test -p ori-compiler --test conformance -- --nocapture
+
+      - name: Collect failing-fixture diff
+        if: failure()
+        run: |
+          mkdir -p conformance-diff
+          # ori-compiler's conformance harness writes a `.diff` next to each
+          # failed fixture in target/conformance-out (created lazily). Copy
+          # whatever is there so reviewers can download the artefact.
+          if [ -d target/conformance-out ]; then
+            cp -R target/conformance-out/. conformance-diff/ || true
+          fi
+          if [ -d tests/golden ]; then
+            # Surface any unexpected on-disk drift in checked-in fixtures.
+            git status --porcelain tests/golden > conformance-diff/git-status.txt || true
+            git diff tests/golden > conformance-diff/git-diff.patch || true
+          fi
+
+      - name: Upload failing-fixture diff
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-failures-${{ github.sha }}
+          path: conformance-diff
+          if-no-files-found: ignore
+          retention-days: 30

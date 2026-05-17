@@ -1,0 +1,4 @@
+// Triggers P3020: `@orison/version` constant is not declared in config.
+module diag.preproc_p3020
+fn label() -> Str:
+  return @orison/version

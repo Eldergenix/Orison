@@ -343,9 +343,30 @@ fn eval_expr(expr: &Expr, env: &mut Env, depth: usize) -> EvalFlow {
             "first-class lambdas are not supported in the bootstrap interpreter",
         )),
 
+        // Extended string literals (M21b) are not yet evaluated. We
+        // surface a structured runtime error so callers can distinguish
+        // "parser saw it" from "interpreter ran it".
+        Expr::InterpString { .. } => EvalFlow::Err(RuntimeError::new(
+            "R0004",
+            "interpolated string literals are not supported in the bootstrap interpreter",
+        )),
+        Expr::RawStr { text, .. } => EvalFlow::Value(Value::Str(text.clone())),
+
         Expr::Error => EvalFlow::Err(RuntimeError::new(
             "R0004",
             "encountered Expr::Error recovery node during execution",
+        )),
+
+        // Operator forms (M21a) parse but are not yet executable in the
+        // bootstrap interpreter; surface a structured runtime error so the
+        // contract surface stays panic-free.
+        Expr::Binary { .. } => EvalFlow::Err(RuntimeError::new(
+            "R0004",
+            "binary operators are not supported in the bootstrap interpreter",
+        )),
+        Expr::Unary { .. } => EvalFlow::Err(RuntimeError::new(
+            "R0004",
+            "unary operators are not supported in the bootstrap interpreter",
         )),
     }
 }

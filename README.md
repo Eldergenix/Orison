@@ -46,6 +46,8 @@ grade.
 - [Capability model](#capability-model)
 - [Honest scope](#honest-scope)
 - [Contributing](#contributing)
+  - [Governance](#governance)
+  - [Learning Orison](#learning-orison)
 - [License](#license)
 
 ---
@@ -721,6 +723,26 @@ python3 scripts/validate_all.py --full   # must end with "validation passed"
 PR checklist, source guardrails (no `.unwrap()` / `.expect()` / `panic!` in
 production), and JSON contract rules are all in `CONTRIBUTING.md`. Security
 issues: see [`SECURITY.md`](./SECURITY.md).
+
+### Governance
+
+- [`GOVERNANCE.md`](./GOVERNANCE.md) — decision process, roles, voting.
+- [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md) — community standards
+  and reporting process.
+- [`MAINTAINERS.md`](./MAINTAINERS.md) — current maintainer team.
+- [`STABILITY.md`](./STABILITY.md) — compatibility tiers + version
+  policy + schema lifecycle.
+- [`docs/rfcs/PROCESS.md`](./docs/rfcs/PROCESS.md) — RFC process for
+  tier-1 / tier-2 changes.
+
+### Learning Orison
+
+The full tutorial series lives at
+[`docs/tutorial/`](./docs/tutorial/). Start with
+[`01-install.md`](./docs/tutorial/01-install.md) and follow the order in
+[`docs/tutorial/README.md`](./docs/tutorial/README.md). The
+[`docs/tutorial/CHEATSHEET.md`](./docs/tutorial/CHEATSHEET.md) is a one-
+page reference of every CLI subcommand, diagnostic prefix, and keyword.
 
 ## License
 

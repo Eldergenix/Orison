@@ -1,14 +1,49 @@
-// capsule: std.url — typed URL parsing surface (bootstrap stub)
+// capsule: std.url — typed URL parsing surface.
+//
+// The bootstrap recognises `http://` and `https://` prefixes via
+// `string.starts_with` and returns a typed `Url` record. Schemes
+// outside that set return `Err(UnsupportedScheme(...))`. The richer
+// query / userinfo surface is M27-deferred until the substring
+// search primitives ship.
 module std.url
 
-type Url
+import core.string
+
+type Url = {
+  scheme: Str,
+  host: Str,
+  path: Str
+}
 
 variant UrlError =
   | Invalid(reason: Str)
   | UnsupportedScheme(scheme: Str)
 
-fn parse(input: Str) -> Result[Url, UrlError]
-fn scheme(url: Url) -> Str
-fn host(url: Url) -> Option[Str]
-fn path(url: Url) -> Str
-fn append_query(url: Url, key: Str, value: Str) -> Url
+// Returns `Ok(Url { ... })` when `input` carries a recognised scheme.
+// Host / path extraction is M27-deferred — the fields are populated
+// with empty strings so callers see a stable shape.
+fn parse(input: Str) -> Result[Url, UrlError]:
+  if input == "":
+    return Err(Invalid("input must not be empty"))
+  if string.starts_with(input, "https://"):
+    return Ok(Url { scheme: "https", host: "", path: "" })
+  if string.starts_with(input, "http://"):
+    return Ok(Url { scheme: "http", host: "", path: "" })
+  return Err(UnsupportedScheme(input))
+
+fn scheme(url: Url) -> Str:
+  return url.scheme
+
+fn host(url: Url) -> Option[Str]:
+  if url.host == "":
+    return None
+  return Some(url.host)
+
+fn path(url: Url) -> Str:
+  return url.path
+
+// Returns `url` unchanged — query string assembly is M27-deferred
+// until `string.concat` / interpolation flow through the type-checker
+// with a stable runtime.
+fn append_query(url: Url, key: Str, value: Str) -> Url:
+  return url

@@ -1,0 +1,14 @@
+.vscode/**
+.vscode-test/**
+src/**
+**/*.ts
+**/*.map
+**/tsconfig.json
+**/tsconfig.*.json
+node_modules/.cache/**
+.gitignore
+.eslintrc*
+.editorconfig
+**/.DS_Store
+**/Thumbs.db
+*.vsix

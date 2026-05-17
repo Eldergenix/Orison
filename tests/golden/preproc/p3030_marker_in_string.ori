@@ -1,0 +1,4 @@
+// Triggers P3030: preprocessor refuses to substitute a marker inside a string literal.
+module diag.preproc_p3030
+fn greet() -> Str:
+  return "hello ${USER}"

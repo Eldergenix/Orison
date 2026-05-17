@@ -1,0 +1,354 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Orison",
+  "scopeName": "source.orison",
+  "fileTypes": ["ori"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#module-decl" },
+    { "include": "#import-decl" },
+    { "include": "#type-decl" },
+    { "include": "#service-decl" },
+    { "include": "#view-decl" },
+    { "include": "#actor-decl" },
+    { "include": "#query-decl" },
+    { "include": "#migration-decl" },
+    { "include": "#capability-decl" },
+    { "include": "#protocol-decl" },
+    { "include": "#impl-decl" },
+    { "include": "#fn-decl" },
+    { "include": "#variant-arm" },
+    { "include": "#uses-clause" },
+    { "include": "#keywords" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#types" },
+    { "include": "#constants" },
+    { "include": "#operators" },
+    { "include": "#punctuation" },
+    { "include": "#function-call" },
+    { "include": "#identifiers" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.documentation.orison",
+          "begin": "///",
+          "end": "$",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.comment.orison" }
+          }
+        },
+        {
+          "name": "comment.line.double-slash.orison",
+          "begin": "//",
+          "end": "$",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.comment.orison" }
+          }
+        },
+        {
+          "name": "comment.block.orison",
+          "begin": "/\\*",
+          "end": "\\*/",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.comment.begin.orison" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.comment.end.orison" }
+          }
+        }
+      ]
+    },
+    "module-decl": {
+      "match": "^\\s*(module)\\s+([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*)",
+      "captures": {
+        "1": { "name": "keyword.other.module.orison" },
+        "2": { "name": "entity.name.namespace.orison" }
+      }
+    },
+    "import-decl": {
+      "match": "^\\s*(import)\\s+([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*)",
+      "captures": {
+        "1": { "name": "keyword.control.import.orison" },
+        "2": { "name": "entity.name.namespace.orison" }
+      }
+    },
+    "type-decl": {
+      "match": "^\\s*(type)\\s+([A-Z][A-Za-z0-9_]*)(?:\\s+(wraps))?",
+      "captures": {
+        "1": { "name": "keyword.declaration.type.orison" },
+        "2": { "name": "entity.name.type.orison" },
+        "3": { "name": "keyword.other.wraps.orison" }
+      }
+    },
+    "service-decl": {
+      "match": "^\\s*(service)\\s+([A-Z][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "keyword.declaration.service.orison" },
+        "2": { "name": "entity.name.type.service.orison" }
+      }
+    },
+    "view-decl": {
+      "match": "^\\s*(view)\\s+([A-Z][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "keyword.declaration.view.orison" },
+        "2": { "name": "entity.name.type.view.orison" }
+      }
+    },
+    "actor-decl": {
+      "match": "^\\s*(actor)\\s+([A-Z][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "keyword.declaration.actor.orison" },
+        "2": { "name": "entity.name.type.actor.orison" }
+      }
+    },
+    "query-decl": {
+      "match": "^\\s*(query)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "keyword.declaration.query.orison" },
+        "2": { "name": "entity.name.function.query.orison" }
+      }
+    },
+    "migration-decl": {
+      "match": "^\\s*(migration)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "keyword.declaration.migration.orison" },
+        "2": { "name": "entity.name.function.migration.orison" }
+      }
+    },
+    "capability-decl": {
+      "match": "^\\s*(capability)\\s+([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*)",
+      "captures": {
+        "1": { "name": "keyword.declaration.capability.orison" },
+        "2": { "name": "entity.name.namespace.capability.orison" }
+      }
+    },
+    "protocol-decl": {
+      "match": "^\\s*(protocol)\\s+([A-Z][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "keyword.declaration.protocol.orison" },
+        "2": { "name": "entity.name.type.protocol.orison" }
+      }
+    },
+    "impl-decl": {
+      "match": "^\\s*(impl)\\s+([A-Z][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "keyword.declaration.impl.orison" },
+        "2": { "name": "entity.name.type.orison" }
+      }
+    },
+    "fn-decl": {
+      "match": "^\\s*(?:(async|extern|unsafe)\\s+)?(fn)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "storage.modifier.orison" },
+        "2": { "name": "keyword.declaration.function.orison" },
+        "3": { "name": "entity.name.function.orison" }
+      }
+    },
+    "variant-arm": {
+      "match": "^\\s*(\\|)\\s*([A-Z][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "punctuation.separator.variant.orison" },
+        "2": { "name": "entity.name.tag.variant.orison" }
+      }
+    },
+    "uses-clause": {
+      "begin": "\\b(uses)\\b",
+      "end": "(?=:|$)",
+      "beginCaptures": {
+        "1": { "name": "keyword.other.uses.orison" }
+      },
+      "patterns": [
+        {
+          "name": "entity.name.tag.capability.orison",
+          "match": "\\b[a-z_][a-z0-9_]*(?:\\.[a-z_][a-z0-9_]*)*\\b"
+        },
+        {
+          "name": "punctuation.separator.comma.orison",
+          "match": ","
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.flow.orison",
+          "match": "\\b(return|if|else|match|for|while|in|throw|await|async)\\b"
+        },
+        {
+          "name": "keyword.declaration.variable.orison",
+          "match": "\\b(let|var|mut)\\b"
+        },
+        {
+          "name": "storage.modifier.orison",
+          "match": "\\b(extern|unsafe|arena|task_scope)\\b"
+        },
+        {
+          "name": "keyword.other.orison",
+          "match": "\\b(module|import|fn|type|service|view|actor|query|migration|capability|protocol|impl|uses|wraps)\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.orison",
+          "match": "\\b(true|false|Unit|None|Some|Ok|Err)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "support.type.primitive.orison",
+          "match": "\\b(Int|Float|Bool|Str|Unit|Bytes|Char)\\b"
+        },
+        {
+          "name": "support.type.generic.orison",
+          "match": "\\b(Option|Result|List|Pair|Fn|Iter|Query|Map|Set|Html|Bytes)\\b"
+        },
+        {
+          "name": "entity.name.type.orison",
+          "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.orison",
+          "begin": "\"",
+          "end": "\"",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.string.begin.orison" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.string.end.orison" }
+          },
+          "patterns": [
+            {
+              "name": "constant.character.escape.orison",
+              "match": "\\\\(?:[nrtv0\\\\\"']|x[0-9a-fA-F]{2}|u\\{[0-9a-fA-F]{1,6}\\})"
+            },
+            {
+              "name": "meta.template.expression.orison",
+              "begin": "\\{",
+              "end": "\\}",
+              "beginCaptures": {
+                "0": { "name": "punctuation.definition.template-expression.begin.orison" }
+              },
+              "endCaptures": {
+                "0": { "name": "punctuation.definition.template-expression.end.orison" }
+              },
+              "patterns": [
+                { "include": "#interpolation-body" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "interpolation-body": {
+      "patterns": [
+        { "include": "#strings" },
+        { "include": "#numbers" },
+        { "include": "#keywords" },
+        { "include": "#constants" },
+        { "include": "#types" },
+        { "include": "#operators" },
+        { "include": "#function-call" },
+        { "include": "#identifiers" }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.orison",
+          "match": "\\b0x[0-9a-fA-F][0-9a-fA-F_]*\\b"
+        },
+        {
+          "name": "constant.numeric.binary.orison",
+          "match": "\\b0b[01][01_]*\\b"
+        },
+        {
+          "name": "constant.numeric.octal.orison",
+          "match": "\\b0o[0-7][0-7_]*\\b"
+        },
+        {
+          "name": "constant.numeric.float.orison",
+          "match": "\\b[0-9][0-9_]*\\.[0-9][0-9_]*(?:[eE][+-]?[0-9][0-9_]*)?\\b"
+        },
+        {
+          "name": "constant.numeric.decimal.orison",
+          "match": "\\b[0-9][0-9_]*\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.arrow.orison",
+          "match": "->|=>"
+        },
+        {
+          "name": "keyword.operator.coalesce.orison",
+          "match": "\\?\\?"
+        },
+        {
+          "name": "keyword.operator.try.orison",
+          "match": "\\?"
+        },
+        {
+          "name": "keyword.operator.comparison.orison",
+          "match": "==|!=|<=|>=|<|>"
+        },
+        {
+          "name": "keyword.operator.logical.orison",
+          "match": "&&|\\|\\||!"
+        },
+        {
+          "name": "keyword.operator.arithmetic.orison",
+          "match": "\\+|-|\\*|/|%"
+        },
+        {
+          "name": "keyword.operator.assignment.orison",
+          "match": "="
+        },
+        {
+          "name": "keyword.operator.pipe.orison",
+          "match": "\\|"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        { "name": "punctuation.separator.comma.orison", "match": "," },
+        { "name": "punctuation.terminator.statement.orison", "match": ";" },
+        { "name": "punctuation.separator.colon.orison", "match": ":" },
+        { "name": "punctuation.accessor.dot.orison", "match": "\\." },
+        { "name": "punctuation.section.parens.begin.orison", "match": "\\(" },
+        { "name": "punctuation.section.parens.end.orison", "match": "\\)" },
+        { "name": "punctuation.section.brackets.begin.orison", "match": "\\[" },
+        { "name": "punctuation.section.brackets.end.orison", "match": "\\]" },
+        { "name": "punctuation.section.braces.begin.orison", "match": "\\{" },
+        { "name": "punctuation.section.braces.end.orison", "match": "\\}" }
+      ]
+    },
+    "function-call": {
+      "match": "\\b([a-z_][A-Za-z0-9_]*)\\s*(?=\\()",
+      "captures": {
+        "1": { "name": "entity.name.function.call.orison" }
+      }
+    },
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "variable.other.orison",
+          "match": "\\b[a-z_][A-Za-z0-9_]*\\b"
+        }
+      ]
+    }
+  }
+}

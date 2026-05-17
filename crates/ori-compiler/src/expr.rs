@@ -25,6 +25,10 @@
 //! to `Expr::Error` so we never silently mis-parse arithmetic.
 
 use crate::diagnostic::Diagnostic;
+use crate::expr_ops::{
+    binop_for_lexeme, is_right_associative, precedence, unop_for_lexeme, BinOp, UnOp,
+    E_MISSING_BIN_OPERAND,
+};
 use crate::lexer::{Token, TokenKind};
 use crate::source::Span;
 use crate::types::TypeRef;
@@ -111,10 +115,54 @@ pub enum Expr {
         params: Vec<(String, Option<TypeRef>)>,
         body: Box<Expr>,
     },
+    /// Binary operator application (`lhs op rhs`), built by the Pratt
+    /// loop in [`Parser::parse_binary_expr`]. The op set is defined in
+    /// [`crate::expr_ops`].
+    Binary {
+        op: BinOp,
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
+    /// Prefix unary operator application (`op operand`). Limited to
+    /// `-` and `!` in the bootstrap grammar.
+    Unary {
+        op: UnOp,
+        operand: Box<Expr>,
+    },
+    /// Interpolated string literal (`"hello {name}"`), as produced by
+    /// the M21b extended string lexer. The parts alternate between
+    /// literal text and embedded expressions; an empty trailing
+    /// `InterpPart::Lit("")` may appear so the lit/expr boundary is
+    /// preserved for round-trip rendering.
+    InterpString {
+        parts: Vec<InterpPart>,
+    },
+    /// Raw string literal (`r"…"` or `r#"…"#`, up to 4 hashes). The
+    /// inner string is captured verbatim — no escape processing was
+    /// performed, and the hash count is recorded separately so the
+    /// formatter can render the literal back into source faithfully.
+    RawStr {
+        /// Verbatim contents (no surrounding quotes or hashes).
+        text: String,
+        /// Number of `#` characters surrounding the literal in source
+        /// (0 for `r"…"`, 1 for `r#"…"#`, …, up to 4).
+        hashes: u8,
+    },
     /// Recovery node. Emitted alongside a diagnostic whenever the parser
     /// hits something it cannot understand. Callers can treat it as
     /// "unknown" without crashing.
     Error,
+}
+
+/// One fragment of an [`Expr::InterpString`]. `Lit` carries the
+/// processed literal text (escapes already resolved); `Expr` carries a
+/// nested expression parsed from the `{ … }` hole.
+#[derive(Debug, Clone, PartialEq)]
+pub enum InterpPart {
+    /// Literal text between holes.
+    Lit(String),
+    /// Expression embedded inside a `{ … }` hole.
+    Expr(Box<Expr>),
 }
 
 impl Expr {
@@ -429,7 +477,138 @@ impl<'a> Parser<'a> {
     // ---------- Expressions ----------
 
     fn parse_expr(&mut self) -> Expr {
+        self.parse_binary_expr(0)
+    }
+
+    /// Pratt-style precedence climber. `min_prec` is the lowest binding
+    /// power the loop is willing to consume; recursive calls bump it up
+    /// for left-associative operators and keep it equal for
+    /// right-associative ones (currently only `??`).
+    fn parse_binary_expr(&mut self, min_prec: u8) -> Expr {
+        let mut lhs = self.parse_unary_expr();
+        loop {
+            let Some((op, op_width)) = self.peek_binop() else {
+                break;
+            };
+            let prec = precedence(op);
+            if prec < min_prec {
+                break;
+            }
+            let op_span = self.current_span();
+            self.pos += op_width;
+            let next_min = if is_right_associative(op) {
+                prec
+            } else {
+                prec.saturating_add(1)
+            };
+            if self.is_at_expr_terminator() {
+                self.push_diag(
+                    Diagnostic::error(
+                        E_MISSING_BIN_OPERAND,
+                        "expected operand after binary operator",
+                        op_span,
+                    )
+                    .with_expected(vec!["expression".to_string()])
+                    .with_agent_summary("Add an expression on the right-hand side of the operator.")
+                    .with_docs(vec!["doc:syntax.operators".to_string()]),
+                );
+                lhs = Expr::Binary {
+                    op,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(Expr::Error),
+                };
+                break;
+            }
+            let rhs = self.parse_binary_expr(next_min);
+            lhs = Expr::Binary {
+                op,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            };
+        }
+        lhs
+    }
+
+    /// Parse an optional prefix unary operator followed by a postfix
+    /// chain. Recurses on itself so `--x` and `!!flag` are accepted at
+    /// parse time (later passes may reject them on type grounds).
+    fn parse_unary_expr(&mut self) -> Expr {
+        if let Some((op, op_span)) = self.peek_prefix_unop() {
+            self.pos += 1;
+            if self.is_at_expr_terminator() {
+                self.push_diag(
+                    Diagnostic::error(
+                        E_MISSING_BIN_OPERAND,
+                        "expected operand after unary operator",
+                        op_span,
+                    )
+                    .with_expected(vec!["expression".to_string()])
+                    .with_agent_summary("Add an expression after the unary operator.")
+                    .with_docs(vec!["doc:syntax.operators".to_string()]),
+                );
+                return Expr::Unary {
+                    op,
+                    operand: Box::new(Expr::Error),
+                };
+            }
+            let operand = self.parse_unary_expr();
+            return Expr::Unary {
+                op,
+                operand: Box::new(operand),
+            };
+        }
         self.parse_postfix_chain()
+    }
+
+    /// Inspect the next one-or-two tokens for a binary operator without
+    /// consuming them. Returns the operator and how many tokens it
+    /// spans (always 1 or 2). The two-token case is `??`, which the
+    /// bootstrap lexer emits as two adjacent `?` symbols.
+    fn peek_binop(&self) -> Option<(BinOp, usize)> {
+        let t0 = self.peek()?;
+        if t0.kind != TokenKind::Symbol {
+            return None;
+        }
+        if t0.lexeme == "?" {
+            let t1 = self.tokens.get(self.pos + 1)?;
+            if t1.kind == TokenKind::Symbol && t1.lexeme == "?" && tokens_are_adjacent(t0, t1) {
+                return Some((BinOp::Coalesce, 2));
+            }
+            return None;
+        }
+        binop_for_lexeme(&t0.lexeme).map(|op| (op, 1))
+    }
+
+    /// Inspect the next token for a prefix unary operator. Never spans
+    /// two tokens.
+    fn peek_prefix_unop(&self) -> Option<(UnOp, Span)> {
+        let t = self.peek()?;
+        if t.kind != TokenKind::Symbol {
+            return None;
+        }
+        unop_for_lexeme(&t.lexeme).map(|op| (op, t.span.clone()))
+    }
+
+    /// `true` if the next token cannot start an expression. Used as the
+    /// stop-condition for operator parsing so we don't try to grab a
+    /// right-hand operand that doesn't exist.
+    fn is_at_expr_terminator(&self) -> bool {
+        let Some(t) = self.peek() else {
+            return true;
+        };
+        if t.kind == TokenKind::Eof {
+            return true;
+        }
+        if t.kind == TokenKind::Symbol {
+            return matches!(
+                t.lexeme.as_str(),
+                ";" | "," | ")" | "}" | "]" | "=>" | "->" | "|" | ":"
+            );
+        }
+        if t.kind == TokenKind::Keyword {
+            return matches!(t.lexeme.as_str(), "else");
+        }
+        false
     }
 
     fn parse_postfix_chain(&mut self) -> Expr {
@@ -447,13 +626,35 @@ impl<'a> Parser<'a> {
                 };
                 continue;
             }
-            if self.eat_symbol("?") {
+            // `?` is the postfix try operator — unless the very next
+            // token is another `?` glued to it, in which case it is the
+            // `??` coalesce operator and must be left for
+            // [`Parser::parse_binary_expr`] to consume.
+            if self.check_symbol("?") && !self.next_is_glued_question() {
+                self.pos += 1;
                 expr = Expr::Try(Box::new(expr));
                 continue;
             }
             break;
         }
         expr
+    }
+
+    /// `true` when the current token is `?` and the following token is
+    /// also `?` with no whitespace between them, indicating the `??`
+    /// coalesce operator.
+    fn next_is_glued_question(&self) -> bool {
+        let Some(t0) = self.peek() else {
+            return false;
+        };
+        let Some(t1) = self.tokens.get(self.pos + 1) else {
+            return false;
+        };
+        t0.kind == TokenKind::Symbol
+            && t0.lexeme == "?"
+            && t1.kind == TokenKind::Symbol
+            && t1.lexeme == "?"
+            && tokens_are_adjacent(t0, t1)
     }
 
     fn parse_field_or_method(&mut self, base: Expr) -> Expr {
@@ -536,7 +737,7 @@ impl<'a> Parser<'a> {
 
             (TokenKind::String, _) => {
                 self.pos += 1;
-                Expr::Lit(Literal::Str(token.lexeme.clone()))
+                self.build_string_expr(&token.lexeme, &token.span)
             }
 
             (TokenKind::Keyword, "if") => self.parse_if(),
@@ -557,6 +758,16 @@ impl<'a> Parser<'a> {
             (TokenKind::Keyword, "fn") => self.parse_lambda(),
 
             (TokenKind::Ident, name) => {
+                // M21b: `r` immediately followed (no whitespace) by a
+                // string literal is a raw string. Detection is purely a
+                // span-adjacency check so it never collides with a real
+                // variable also called `r`.
+                if name == "r" {
+                    if let Some(raw_expr) = self.try_parse_raw_string(&token.span) {
+                        return raw_expr;
+                    }
+                }
+
                 // Look ahead to disambiguate variants:
                 //   * `Name { ... }`   → record literal (lowercase or upper)
                 //   * `Name(...)`      → constructor or call
@@ -1022,6 +1233,179 @@ impl<'a> Parser<'a> {
             _ => TypeRef::Unknown,
         }
     }
+
+    // ---------- M21b: extended string literals ----------
+
+    /// Build the right `Expr` flavour for a `TokenKind::String` token.
+    /// Falls back to a plain `Lit(Str(_))` whenever the extended lexer
+    /// reports either "no interpolation present" or a structured error
+    /// (the error path additionally emits a diagnostic; the literal
+    /// itself degrades to the original token text so downstream passes
+    /// still see *some* string).
+    fn build_string_expr(&mut self, lexeme: &str, span: &crate::source::Span) -> Expr {
+        // Fast path: no `{` at all means plain string. We still have to
+        // honour `\{` as an escape, so we walk char-by-char.
+        if !lexeme_has_unescaped_brace(lexeme) {
+            return Expr::Lit(Literal::Str(lexeme.to_string()));
+        }
+        // Reconstruct the surface form `"…"` so `lex_string_extended`
+        // sees a self-contained literal. The lexer in `crate::lexer`
+        // strips the surrounding quotes; we put them back temporarily.
+        let synthesised = format!("\"{lexeme}\"");
+        let lexed = crate::string_lits::lex_string_extended(&synthesised, 0);
+        let (lit, _) = match lexed {
+            Ok(pair) => pair,
+            Err(err) => {
+                self.push_diag(
+                    Diagnostic::error(err.id(), err.message(), span.clone())
+                        .with_agent_summary("Fix the offending string literal.")
+                        .with_docs(vec!["doc:syntax.strings".to_string()]),
+                );
+                return Expr::Lit(Literal::Str(lexeme.to_string()));
+            }
+        };
+        if !lit.is_interpolated() {
+            // Defensive — if for some reason the extended lexer didn't
+            // see holes (e.g. all braces were escaped), fall back to
+            // the flattened literal so output still round-trips.
+            return Expr::Lit(Literal::Str(lit.flatten_lit_only()));
+        }
+        let parts = self.lower_interp_parts(lit.parts, span);
+        Expr::InterpString { parts }
+    }
+
+    /// Lower the structured `StringPart` sequence into an `InterpPart`
+    /// sequence, recursively parsing the embedded expression text for
+    /// every `Interp` hole through the same body parser.
+    fn lower_interp_parts(
+        &mut self,
+        parts: Vec<crate::string_lits::StringPart>,
+        span: &crate::source::Span,
+    ) -> Vec<InterpPart> {
+        let mut out = Vec::with_capacity(parts.len());
+        for part in parts {
+            match part {
+                crate::string_lits::StringPart::Lit(text) => {
+                    out.push(InterpPart::Lit(text));
+                }
+                crate::string_lits::StringPart::Interp(text) => {
+                    let trimmed = text.trim();
+                    if trimmed.is_empty() {
+                        // Empty hole `"{}"` — record as a recovery node
+                        // plus diagnostic so we don't silently accept
+                        // it. The diagnostic id matches the lexer's
+                        // S1302 family for "unbalanced/empty hole".
+                        self.push_diag(
+                            Diagnostic::error(
+                                "S1302",
+                                "empty `{}` interpolation hole",
+                                span.clone(),
+                            )
+                            .with_agent_summary("Provide an expression inside the `{ … }`.")
+                            .with_docs(vec!["doc:syntax.strings".to_string()]),
+                        );
+                        out.push(InterpPart::Expr(Box::new(Expr::Error)));
+                        continue;
+                    }
+                    let sub_src = crate::source::SourceFile::new(span.file.clone(), trimmed);
+                    let sub_tokens = crate::lexer::lex(&sub_src);
+                    let (sub_expr, sub_diags) = parse_body_expr(&sub_tokens);
+                    for d in sub_diags {
+                        self.push_diag(d);
+                    }
+                    out.push(InterpPart::Expr(Box::new(sub_expr)));
+                }
+            }
+        }
+        out
+    }
+
+    /// Try to parse a raw string starting at the current token, which
+    /// the caller has already verified to be `Ident("r")`. Returns
+    /// `Some(expr)` if the next token is an adjacent `String` (or a
+    /// `Symbol("#")` chain followed by a `String`), and consumes those
+    /// tokens; returns `None` otherwise so the caller falls back to
+    /// treating `r` as a regular identifier.
+    fn try_parse_raw_string(&mut self, r_span: &crate::source::Span) -> Option<Expr> {
+        // Collect zero-or-more adjacent `#` symbol tokens.
+        let mut probe = self.pos + 1;
+        let mut hashes: u8 = 0;
+        let mut last_end = r_span.end.clone();
+        while let Some(t) = self.tokens.get(probe) {
+            if t.kind == TokenKind::Symbol
+                && t.lexeme == "#"
+                && spans_are_adjacent(&last_end, &t.span)
+            {
+                hashes = hashes.saturating_add(1);
+                last_end = t.span.end.clone();
+                probe += 1;
+            } else {
+                break;
+            }
+        }
+        // Next token must be a `String` adjacent to whatever we've
+        // consumed so far. For a `r#"…"#` literal, the existing lexer
+        // would tokenise the body up to the first `"`; we therefore
+        // do not currently support hashed raw strings via this lexer
+        // path. The standalone `lex_string_extended` handles them when
+        // called against raw source.
+        let next = self.tokens.get(probe)?;
+        if next.kind != TokenKind::String || !spans_are_adjacent(&last_end, &next.span) {
+            return None;
+        }
+        if hashes > 0 {
+            // Best-effort heuristic: with hashed raw strings the body
+            // is captured in `next.lexeme` only up to the first
+            // embedded `"`. That's still useful for round-trip but
+            // accurate only for hash-free contents. We surface no
+            // diagnostic here — the literal is preserved verbatim.
+        }
+        // Consume `r` + `#`*hashes + string token.
+        self.pos = probe + 1;
+        Some(Expr::RawStr {
+            text: next.lexeme.clone(),
+            hashes,
+        })
+    }
+}
+
+/// `true` if `lexeme` contains at least one `{` that is not preceded by
+/// a `\` (per the M21b escape rules). Walks the string char-by-char to
+/// avoid being fooled by `\\{` (where the backslash is itself escaped).
+fn lexeme_has_unescaped_brace(lexeme: &str) -> bool {
+    let mut escaped = false;
+    for ch in lexeme.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch == '{' {
+            return true;
+        }
+    }
+    false
+}
+
+/// `true` if `b` starts exactly where `a` ends (same file, same line,
+/// same column). Used to decide whether two adjacent tokens are part of
+/// a single compound literal (`r"…"`) or merely happen to neighbour
+/// each other across whitespace.
+fn spans_are_adjacent(a_end: &crate::source::Position, b: &crate::source::Span) -> bool {
+    a_end.line == b.start.line && a_end.column == b.start.column
+}
+
+/// Two tokens are *adjacent* when the end coordinate of the first equals
+/// the start coordinate of the second — i.e. nothing (not even
+/// whitespace) separates them in the source. The bootstrap lexer emits
+/// `??` as two consecutive `?` symbols, so adjacency is how the parser
+/// distinguishes `a ?? b` (coalesce) from `a? ? b` (postfix try followed
+/// by a malformed ternary fragment).
+fn tokens_are_adjacent(a: &Token, b: &Token) -> bool {
+    a.span.end.line == b.span.start.line && a.span.end.column == b.span.start.column
 }
 
 fn parse_number_literal(text: &str) -> Literal {
@@ -1087,6 +1471,62 @@ mod tests {
     #[test]
     fn string_literal() {
         assert_eq!(parse_ok("\"hi\""), Expr::Lit(Literal::Str("hi".into())));
+    }
+
+    #[test]
+    fn interpolated_string_literal() {
+        // `"hello {name}"` parses to an `InterpString` with two parts:
+        //   * literal "hello "
+        //   * embedded expression `name`
+        let e = parse_ok("\"hello {name}\"");
+        if let Expr::InterpString { parts } = e {
+            // The lexer always emits a trailing `Lit` so the boundary
+            // between text and expression is preserved (even if empty).
+            let lit_parts: Vec<_> = parts
+                .iter()
+                .filter_map(|p| match p {
+                    InterpPart::Lit(s) => Some(s.clone()),
+                    _ => None,
+                })
+                .collect();
+            let expr_parts: Vec<_> = parts
+                .iter()
+                .filter_map(|p| match p {
+                    InterpPart::Expr(e) => Some((**e).clone()),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(lit_parts, vec!["hello ".to_string(), String::new()]);
+            assert_eq!(expr_parts, vec![Expr::Var("name".into())]);
+        } else {
+            #[allow(clippy::assertions_on_constants)]
+            {
+                assert!(false, "expected InterpString, got {e:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn raw_string_literal() {
+        // `r"foo"` parses to `RawStr { text: "foo", hashes: 0 }`.
+        let e = parse_ok("r\"foo\"");
+        if let Expr::RawStr { text, hashes } = e {
+            assert_eq!(text, "foo");
+            assert_eq!(hashes, 0);
+        } else {
+            #[allow(clippy::assertions_on_constants)]
+            {
+                assert!(false, "expected RawStr, got {e:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn plain_string_still_lit_no_regression() {
+        // M21b adds new variants but plain strings must keep parsing
+        // to `Lit(Str(_))` so older passes continue to work.
+        let e = parse_ok("\"plain\"");
+        assert_eq!(e, Expr::Lit(Literal::Str("plain".into())));
     }
 
     #[test]
@@ -1432,8 +1872,290 @@ mod tests {
                 if d.agent.docs.is_empty() {
                     assert!(false, "diag {} missing docs reference", d.id);
                 }
-                if !d.id.starts_with("E11") {
-                    assert!(false, "diag {} not in body-parser range", d.id);
+                if !d.id.starts_with("E11") && !d.id.starts_with("E12") {
+                    assert!(
+                        false,
+                        "diag {} not in body-parser range (E11xx / E12xx)",
+                        d.id
+                    );
+                }
+            }
+        }
+    }
+
+    // ---- binary / unary operators (M21a) ----
+
+    fn assert_var(expr: &Expr, expected: &str) {
+        match expr {
+            Expr::Var(name) => assert_eq!(name, expected),
+            other => {
+                #[allow(clippy::assertions_on_constants)]
+                {
+                    assert!(false, "expected Var({expected}), got {other:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn binop_add_simple() {
+        let e = parse_ok("a + b");
+        match e {
+            Expr::Binary { op, lhs, rhs } => {
+                assert_eq!(op, BinOp::Add);
+                assert_var(&lhs, "a");
+                assert_var(&rhs, "b");
+            }
+            other => {
+                #[allow(clippy::assertions_on_constants)]
+                {
+                    assert!(false, "expected Binary(Add), got {other:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn binop_precedence_mul_binds_tighter_than_add() {
+        // `a + b * c` → Add(a, Mul(b, c))
+        let e = parse_ok("a + b * c");
+        match e {
+            Expr::Binary {
+                op: BinOp::Add,
+                lhs,
+                rhs,
+            } => {
+                assert_var(&lhs, "a");
+                match *rhs {
+                    Expr::Binary {
+                        op: BinOp::Mul,
+                        lhs: r_lhs,
+                        rhs: r_rhs,
+                    } => {
+                        assert_var(&r_lhs, "b");
+                        assert_var(&r_rhs, "c");
+                    }
+                    other => {
+                        #[allow(clippy::assertions_on_constants)]
+                        {
+                            assert!(false, "expected nested Mul, got {other:?}");
+                        }
+                    }
+                }
+            }
+            other => {
+                #[allow(clippy::assertions_on_constants)]
+                {
+                    assert!(false, "expected outer Add, got {other:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn binop_left_associative_add() {
+        // `a * b + c` → Add(Mul(a, b), c)
+        let e = parse_ok("a * b + c");
+        match e {
+            Expr::Binary {
+                op: BinOp::Add,
+                lhs,
+                rhs,
+            } => {
+                match *lhs {
+                    Expr::Binary {
+                        op: BinOp::Mul,
+                        lhs: l_lhs,
+                        rhs: l_rhs,
+                    } => {
+                        assert_var(&l_lhs, "a");
+                        assert_var(&l_rhs, "b");
+                    }
+                    other => {
+                        #[allow(clippy::assertions_on_constants)]
+                        {
+                            assert!(false, "expected nested Mul, got {other:?}");
+                        }
+                    }
+                }
+                assert_var(&rhs, "c");
+            }
+            other => {
+                #[allow(clippy::assertions_on_constants)]
+                {
+                    assert!(false, "expected outer Add, got {other:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn binop_right_associative_coalesce() {
+        // `a ?? b ?? c` → Coalesce(a, Coalesce(b, c))
+        let e = parse_ok("a ?? b ?? c");
+        match e {
+            Expr::Binary {
+                op: BinOp::Coalesce,
+                lhs,
+                rhs,
+            } => {
+                assert_var(&lhs, "a");
+                match *rhs {
+                    Expr::Binary {
+                        op: BinOp::Coalesce,
+                        lhs: r_lhs,
+                        rhs: r_rhs,
+                    } => {
+                        assert_var(&r_lhs, "b");
+                        assert_var(&r_rhs, "c");
+                    }
+                    other => {
+                        #[allow(clippy::assertions_on_constants)]
+                        {
+                            assert!(false, "expected nested Coalesce, got {other:?}");
+                        }
+                    }
+                }
+            }
+            other => {
+                #[allow(clippy::assertions_on_constants)]
+                {
+                    assert!(false, "expected outer Coalesce, got {other:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn unop_not_simple() {
+        let e = parse_ok("!x");
+        match e {
+            Expr::Unary { op, operand } => {
+                assert_eq!(op, UnOp::Not);
+                assert_var(&operand, "x");
+            }
+            other => {
+                #[allow(clippy::assertions_on_constants)]
+                {
+                    assert!(false, "expected Unary(Not), got {other:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn unop_neg_then_binop() {
+        // `-x + 1` → Add(Neg(x), 1)
+        let e = parse_ok("-x + 1");
+        match e {
+            Expr::Binary {
+                op: BinOp::Add,
+                lhs,
+                rhs,
+            } => {
+                match *lhs {
+                    Expr::Unary {
+                        op: UnOp::Neg,
+                        operand,
+                    } => assert_var(&operand, "x"),
+                    other => {
+                        #[allow(clippy::assertions_on_constants)]
+                        {
+                            assert!(false, "expected Neg(x), got {other:?}");
+                        }
+                    }
+                }
+                assert_eq!(*rhs, Expr::Lit(Literal::Int(1)));
+            }
+            other => {
+                #[allow(clippy::assertions_on_constants)]
+                {
+                    assert!(false, "expected outer Add, got {other:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn logical_and_binds_tighter_than_or() {
+        // `a && b || c` → Or(And(a, b), c)
+        let e = parse_ok("a && b || c");
+        match e {
+            Expr::Binary {
+                op: BinOp::Or,
+                lhs,
+                rhs,
+            } => {
+                match *lhs {
+                    Expr::Binary {
+                        op: BinOp::And,
+                        lhs: l_lhs,
+                        rhs: l_rhs,
+                    } => {
+                        assert_var(&l_lhs, "a");
+                        assert_var(&l_rhs, "b");
+                    }
+                    other => {
+                        #[allow(clippy::assertions_on_constants)]
+                        {
+                            assert!(false, "expected And(a, b), got {other:?}");
+                        }
+                    }
+                }
+                assert_var(&rhs, "c");
+            }
+            other => {
+                #[allow(clippy::assertions_on_constants)]
+                {
+                    assert!(false, "expected outer Or, got {other:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn operator_parsing_is_idempotent() {
+        let text = "-a + b * c == d && e || f ?? g";
+        let a = parse_ok(text);
+        let b = parse_ok(text);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn missing_right_operand_emits_e1200() {
+        let (_e, diags) = parse("a +");
+        assert!(
+            diags.iter().any(|d| d.id == E_MISSING_BIN_OPERAND),
+            "expected E1200 diagnostic, got {:?}",
+            diags.iter().map(|d| &d.id).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn try_operator_still_works_after_operators_added() {
+        // Regression guard: postfix `?` must keep parsing as `Try` even
+        // now that the operator loop knows about `??`.
+        let e = parse_ok("f(x)?");
+        assert!(matches!(e, Expr::Try(_)));
+    }
+
+    #[test]
+    fn comparison_then_logical() {
+        // `a < b && c == d` → And(Lt(a, b), Eq(c, d))
+        let e = parse_ok("a < b && c == d");
+        match e {
+            Expr::Binary {
+                op: BinOp::And,
+                lhs,
+                rhs,
+            } => {
+                assert!(matches!(*lhs, Expr::Binary { op: BinOp::Lt, .. }));
+                assert!(matches!(*rhs, Expr::Binary { op: BinOp::Eq, .. }));
+            }
+            other => {
+                #[allow(clippy::assertions_on_constants)]
+                {
+                    assert!(false, "expected outer And, got {other:?}");
                 }
             }
         }

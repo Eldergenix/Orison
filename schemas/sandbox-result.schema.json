@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.dev/schemas/sandbox-result.schema.json",
+  "title": "Orison Sandbox Result v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "exit_code",
+    "stdout",
+    "stderr",
+    "fs_reads",
+    "fs_writes",
+    "env_reads",
+    "policy_violations"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.sandbox_result.v1"
+    },
+    "exit_code": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "stdout": {
+      "type": "string"
+    },
+    "stderr": {
+      "type": "string"
+    },
+    "fs_reads": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "fs_writes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "env_reads": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "policy_violations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "target"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "FsRead",
+              "FsWrite",
+              "EnvRead",
+              "Network",
+              "Timeout"
+            ]
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.sandbox_result.v1",
+      "exit_code": null,
+      "stdout": "",
+      "stderr": "TODO(M32): real-sandbox-not-implemented",
+      "fs_reads": [],
+      "fs_writes": [],
+      "env_reads": [],
+      "policy_violations": []
+    },
+    {
+      "schema": "ori.sandbox_result.v1",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "denied write",
+      "fs_reads": [
+        "/tmp/in.bin"
+      ],
+      "fs_writes": [
+        "/etc/passwd"
+      ],
+      "env_reads": [
+        "PATH"
+      ],
+      "policy_violations": [
+        {
+          "kind": "FsWrite",
+          "target": "/etc/passwd"
+        }
+      ]
+    }
+  ]
+}

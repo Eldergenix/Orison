@@ -1,0 +1,8 @@
+{
+  "schema": "ori.patch.v999",
+  "intent": "Bump schema",
+  "operations": [
+    {"op": "add_import", "text": "import std.json"}
+  ],
+  "tests": {"run": []}
+}

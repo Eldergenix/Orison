@@ -1,0 +1,3 @@
+// Pair with cycle_a.ori: closes the import cycle that triggers E0230.
+module cycle_b
+import cycle_a

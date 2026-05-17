@@ -1,0 +1,4 @@
+// Triggers MOB0003: app id `oneword` lacks the required reverse-DNS form.
+module diag.mob0003
+fn ping() -> Unit:
+  return Unit

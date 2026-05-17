@@ -1,0 +1,4 @@
+// Triggers B0010: two `&mut` borrows of the same identifier `x`.
+module diag.borrow_mut_alias
+fn swap(x: &mut Int, x: &mut Int) -> Unit:
+  return Unit

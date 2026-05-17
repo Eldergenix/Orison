@@ -1,0 +1,6 @@
+{
+  "schema": "ori.patch.v1",
+  "intent": "Operations should be array",
+  "operations": "not an array",
+  "tests": {"run": []}
+}

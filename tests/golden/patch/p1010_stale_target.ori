@@ -1,0 +1,4 @@
+// Source paired with p1010_stale_target.json: target id does not exist in this CST.
+module diag.patch_p1010
+fn greet() -> Str:
+  return "hi"

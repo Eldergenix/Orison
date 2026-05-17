@@ -1,0 +1,8 @@
+{
+  "schema": "ori.patch.v1",
+  "intent": "Unknown operation kind",
+  "operations": [
+    {"op": "fly_to_moon", "target": "sym:x.y"}
+  ],
+  "tests": {"run": []}
+}

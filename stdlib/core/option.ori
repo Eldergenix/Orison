@@ -24,3 +24,13 @@ fn is_none[T](option: Option[T]) -> Bool:
   match option:
     Some(value) => return false
     None => return true
+
+fn and_then[T, U](option: Option[T], f: Fn(T) -> Option[U]) -> Option[U]:
+  match option:
+    Some(value) => return f(value)
+    None => return None
+
+fn or_else[T](option: Option[T], f: Fn() -> Option[T]) -> Option[T]:
+  match option:
+    Some(value) => return Some(value)
+    None => return f()

@@ -1,0 +1,1 @@
+{"code":"R0003","message":"function `add` expects 2 argument(s), got 1","observed_effects":[],"schema":"ori.runtime.v1","source":"tests/golden/runtime/r0003_arity.ori"}

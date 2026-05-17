@@ -1,0 +1,4 @@
+// Pair with cross_module_dup_b.ori: two modules share name + fn, triggers E0211.
+module cross_dup
+fn run() -> Int:
+  return 1

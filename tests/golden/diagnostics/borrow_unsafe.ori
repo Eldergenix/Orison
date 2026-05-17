@@ -1,0 +1,4 @@
+// Triggers B0040: declares the unsafe effect, which bootstrap rejects outright.
+module diag.borrow_unsafe
+fn raw() -> Unit uses unsafe:
+  return Unit

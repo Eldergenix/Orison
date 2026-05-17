@@ -1,0 +1,111 @@
+{
+  "name": "orison-language-support",
+  "displayName": "Orison Language Support",
+  "description": "Syntax highlighting, LSP, debugging for the Orison programming language.",
+  "version": "0.1.0",
+  "publisher": "Eldergenix",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Eldergenix/Orison.git",
+    "directory": "extensions/vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/Eldergenix/Orison/issues"
+  },
+  "homepage": "https://github.com/Eldergenix/Orison/tree/main/extensions/vscode",
+  "icon": "icon.png",
+  "engines": {
+    "vscode": ">=1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Debuggers",
+    "Linters"
+  ],
+  "keywords": [
+    "orison",
+    "ori",
+    "language-server",
+    "lsp"
+  ],
+  "activationEvents": [
+    "onLanguage:orison"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "orison",
+        "aliases": [
+          "Orison",
+          "orison",
+          "ori"
+        ],
+        "extensions": [
+          ".ori"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "orison",
+        "scopeName": "source.orison",
+        "path": "./syntaxes/orison.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "orison.restartLsp",
+        "title": "Orison: Restart Language Server",
+        "category": "Orison"
+      },
+      {
+        "command": "orison.openDoctor",
+        "title": "Orison: Open Doctor Report",
+        "category": "Orison"
+      },
+      {
+        "command": "orison.runCurrentFile",
+        "title": "Orison: Run Current File",
+        "category": "Orison"
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Orison",
+      "properties": {
+        "orison.serverPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the `ori` executable. When empty, the extension falls back to `ori` on PATH and invokes it with `lsp --stdio`."
+        },
+        "orison.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Trace level for communication with the Orison language server."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package --no-yarn",
+    "vscode:prepublish": "tsc -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.0"
+  }
+}

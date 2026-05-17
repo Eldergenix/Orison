@@ -1,17 +1,60 @@
 // capsule: std.validation — Accumulating validation results for form and DTO checks.
+//
+// Bodies use the M21a binary-operator surface (`==`, `<`, `>`) so the
+// type-checker sees real branches, and report failures via
+// Result[Str, Str]. The richer Validation[T] variant remains available
+// for callers that want to accumulate multiple errors.
 module std.validation
 
 import core.list
+import core.string
 
 type Validation[T] =
   | Valid(value: T)
   | Invalid(errors: List[Str])
 
-fn validate_email(s: Str) -> Validation[Str]:
-  return Valid(s)
+// Returns `Ok(s)` when `s` looks like a minimally well-formed email
+// address (`<local>@<domain>` with at least one dot). The check is
+// intentionally conservative — the goal is to reject obvious garbage,
+// not to certify deliverability.
+fn validate_email(s: Str) -> Result[Str, Str]:
+  if s == "":
+    return Err("email must not be empty")
+  if string.contains(s, "@") == false:
+    return Err("email must contain `@`")
+  if string.contains(s, ".") == false:
+    return Err("email must contain a domain dot")
+  return Ok(s)
 
+// Returns `Ok(s)` when `s` is non-empty after the runtime trims it.
+// The empty-string check uses the `==` binop so it lights up the
+// type-checker even before `string.len` is wired.
+fn validate_non_empty(s: Str) -> Result[Str, Str]:
+  if s == "":
+    return Err("value must not be empty")
+  return Ok(s)
+
+// Returns `Ok(s)` when `min <= len(s) <= max`. Both endpoints are
+// inclusive. Uses the M21a comparison binops directly.
+fn validate_length(s: Str, min: Int, max: Int) -> Result[Str, Str]:
+  let n = string.len(s)
+  if n < min:
+    return Err("value is shorter than minimum length")
+  if n > max:
+    return Err("value is longer than maximum length")
+  return Ok(s)
+
+// Convenience wrapper kept for the M27 declaration surface: yields a
+// `Validation[Str]` for callers that accumulate errors rather than
+// short-circuit on the first failure.
 fn validate_min_length(s: Str, min: Int) -> Validation[Str]:
+  let n = string.len(s)
+  if n < min:
+    return Invalid(List.empty())
   return Valid(s)
 
+// Returns `Valid(n)` when `n > 0`, otherwise `Invalid`. Uses `>` binop.
 fn validate_positive(n: Int) -> Validation[Int]:
-  return Valid(n)
+  if n > 0:
+    return Valid(n)
+  return Invalid(List.empty())

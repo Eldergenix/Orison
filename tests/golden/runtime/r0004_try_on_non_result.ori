@@ -1,0 +1,4 @@
+// Triggers R0004: `?` operator applied to a non-Result value.
+module diag.r0004
+fn main() -> Int:
+  return 1?

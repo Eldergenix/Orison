@@ -218,6 +218,21 @@ impl Diagnostic {
         self
     }
 
+    /// Attach longer-form help text. The bootstrap diagnostic shape has
+    /// no dedicated `help` field today, so help is routed through the
+    /// agent summary — keeping the on-the-wire JSON contract stable
+    /// while still letting callers express richer guidance.
+    pub fn with_help(mut self, help: impl Into<String>) -> Self {
+        let text = help.into();
+        if self.agent.summary.is_empty() {
+            self.agent.summary = text;
+        } else {
+            self.agent.summary.push(' ');
+            self.agent.summary.push_str(&text);
+        }
+        self
+    }
+
     /// Replace the agent-facing minimal-context list.
     pub fn with_minimal_context(mut self, context: Vec<String>) -> Self {
         self.agent.minimal_context = context;

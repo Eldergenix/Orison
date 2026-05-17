@@ -1,0 +1,6 @@
+// Triggers E0420: caller invokes leaf() with fs.read but does not declare the effect.
+module diag.effect_propagation
+fn leaf() -> Int uses fs.read:
+  return 1
+fn caller() -> Int:
+  return leaf()

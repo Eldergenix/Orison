@@ -1,0 +1,4 @@
+// Triggers MOB0001: android target with `crypto` -> keychain permission unsupported.
+module diag.mob0001
+fn t() -> Unit uses crypto:
+  return Unit

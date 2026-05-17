@@ -1,0 +1,4 @@
+// Pair with cross_module_dup_a.ori: second declaration triggers E0211 in resolver.
+module cross_dup
+fn run() -> Int:
+  return 2

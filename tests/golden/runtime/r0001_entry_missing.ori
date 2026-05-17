@@ -1,0 +1,4 @@
+// Triggers R0001: exec_program called with `missing` entry that the module does not define.
+module diag.r0001
+fn other() -> Int:
+  return 1
