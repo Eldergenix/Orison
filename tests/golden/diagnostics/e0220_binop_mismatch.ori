@@ -1,0 +1,5 @@
+// Triggers E0220: binary `+` with a Str lhs and an Int rhs.
+module diag.e0220_binop_mismatch
+fn f() -> Str:
+  let x = "a" + 1
+  return x

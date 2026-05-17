@@ -1,10 +1,10 @@
 // capsule: std.url — typed URL parsing surface.
 //
-// The bootstrap recognises `http://` and `https://` prefixes via
-// `string.starts_with` and returns a typed `Url` record. Schemes
-// outside that set return `Err(UnsupportedScheme(...))`. The richer
-// query / userinfo surface is M27-deferred until the substring
-// search primitives ship.
+// Backed by the `url.*` runtime builtins. `parse` recognises `http`
+// and `https` schemes and returns a typed `Url` record populated with
+// scheme, host (port stripped), and path (query/fragment preserved).
+// Userinfo, IPv6 literals, and percent-decoding are out of scope for
+// the bootstrap; callers needing those should preprocess upstream.
 module std.url
 
 import core.string
@@ -20,30 +20,27 @@ variant UrlError =
   | UnsupportedScheme(scheme: Str)
 
 // Returns `Ok(Url { ... })` when `input` carries a recognised scheme.
-// Host / path extraction is M27-deferred — the fields are populated
-// with empty strings so callers see a stable shape.
+// The runtime `url.parse` primitive populates scheme, host (with port
+// stripped), and path (including any query/fragment). Empty input
+// yields `Err(Invalid("input must not be empty"))`; unrecognised
+// schemes yield `Err(UnsupportedScheme(scheme))`.
 fn parse(input: Str) -> Result[Url, UrlError]:
-  if input == "":
-    return Err(Invalid("input must not be empty"))
-  if string.starts_with(input, "https://"):
-    return Ok(Url { scheme: "https", host: "", path: "" })
-  if string.starts_with(input, "http://"):
-    return Ok(Url { scheme: "http", host: "", path: "" })
-  return Err(UnsupportedScheme(input))
+  return url.parse(input)
 
-fn scheme(url: Url) -> Str:
-  return url.scheme
+fn scheme(u: Url) -> Str:
+  return u.scheme
 
-fn host(url: Url) -> Option[Str]:
-  if url.host == "":
+fn host(u: Url) -> Option[Str]:
+  if u.host == "":
     return None
-  return Some(url.host)
+  return Some(u.host)
 
-fn path(url: Url) -> Str:
-  return url.path
+fn path(u: Url) -> Str:
+  return u.path
 
-// Returns `url` unchanged — query string assembly is M27-deferred
-// until `string.concat` / interpolation flow through the type-checker
-// with a stable runtime.
-fn append_query(url: Url, key: Str, value: Str) -> Url:
-  return url
+// Appends `?key=value` (or `&key=value` if a query is already
+// present) to `url`. The bootstrap does not URL-encode the key or
+// value — callers must pre-encode if their payloads contain
+// reserved characters.
+fn append_query(u: Url, key: Str, value: Str) -> Url:
+  return url.append_query(u, key, value)

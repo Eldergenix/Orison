@@ -174,6 +174,7 @@ pub fn doctor_report_json() -> String {
         ("agent_tests", "ori.agent_tests.v1"),
         ("audit_report", "ori.audit_report.v1"),
         ("backend_dispatch", "ori.backend_dispatch.v1"),
+        ("backend_dispatch_v2", "ori.backend_dispatch.v2"),
         ("benchmark", "ori.benchmark.v1"),
         ("build_report", "ori.build_report.v1"),
         ("capability", "ori.capability.v1"),
@@ -182,6 +183,8 @@ pub fn doctor_report_json() -> String {
         ("change", "ori.change.v1"),
         ("coverage_report", "ori.coverage_report.v1"),
         ("design_tokens_report", "ori.design_tokens_report.v1"),
+        ("desktop_build_report", "ori.desktop_build_report.v1"),
+        ("desktop_manifest", "ori.desktop_manifest.v1"),
         ("diagnostic", "ori.diagnostic.v1"),
         ("doctor", "ori.doctor.v1"),
         ("graphql_import", "ori.graphql_import.v1"),
@@ -198,6 +201,7 @@ pub fn doctor_report_json() -> String {
         ("patch_check", "ori.patch_check.v1"),
         ("preprocess", "ori.preprocess.v1"),
         ("provenance", "ori.provenance.v1"),
+        ("publish_outcome", "ori.publish_outcome.v1"),
         ("publish_receipt", "ori.publish_receipt.v1"),
         ("registry_list", "ori.registry_list.v1"),
         ("rpc_import", "ori.rpc_import.v1"),
@@ -321,13 +325,20 @@ mod tests {
                 None => continue,
             };
             // Map `foo-bar.schema.json` to the on-the-wire id
-            // `ori.foo_bar.v1`.
+            // `ori.foo_bar.v1`. `foo-bar-vN.schema.json` (N > 1) maps
+            // to `ori.foo_bar.vN`; the version is reflected in the
+            // filename suffix so v2 / v3 contracts can ship alongside
+            // their v1 ancestors without colliding in the doctor list.
             let stem = match name.strip_suffix(".schema.json") {
                 Some(s) => s,
                 None => continue,
             };
-            let snake = stem.replace('-', "_");
-            let expected = format!("ori.{snake}.v1");
+            let (base, version) = match stem.rsplit_once("-v") {
+                Some((b, v)) if v.chars().all(|c| c.is_ascii_digit()) => (b, v.to_string()),
+                _ => (stem, "1".to_string()),
+            };
+            let snake = base.replace('-', "_");
+            let expected = format!("ori.{snake}.v{version}");
             if !json.contains(&expected) {
                 missing.push(expected);
             }

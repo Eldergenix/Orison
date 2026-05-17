@@ -1,0 +1,6 @@
+// Triggers B0070: `borrow_mut(x)` taken while `borrow(x)` is still live.
+module diag.b0070_mut_after_shared
+fn f() -> Int:
+  let r = borrow(x)
+  let w = borrow_mut(x)
+  use(r, w)

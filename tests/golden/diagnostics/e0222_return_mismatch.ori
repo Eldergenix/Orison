@@ -1,0 +1,4 @@
+// Triggers E0222: declared return type is `Int` but the body returns a `Str`.
+module diag.e0222_return_mismatch
+fn f() -> Int:
+  return "hello"

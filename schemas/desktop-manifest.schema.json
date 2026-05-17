@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ori.desktop_build_report.v1",
+  "title": "Orison Desktop Build Report v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "manifest",
+    "artefacts",
+    "warnings"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.desktop_build_report.v1"
+    },
+    "manifest": {
+      "type": "object",
+      "required": [
+        "schema",
+        "platform",
+        "bundle_id",
+        "product_name",
+        "version",
+        "binary_targets",
+        "entitlements",
+        "linux_categories",
+        "windows_subsystem",
+        "capabilities_required"
+      ],
+      "properties": {
+        "schema": {
+          "const": "ori.desktop_manifest.v1"
+        },
+        "platform": {
+          "enum": [
+            "macos",
+            "linux",
+            "windows"
+          ]
+        },
+        "bundle_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+        },
+        "product_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "binary_targets": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "entitlements": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "linux_categories": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "windows_subsystem": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "console",
+                "windows"
+              ]
+            }
+          ]
+        },
+        "capabilities_required": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "artefacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "kind",
+          "bytes_estimate"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "enum": [
+              "binary",
+              "desktop-entry",
+              "info-plist"
+            ]
+          },
+          "bytes_estimate": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.desktop_build_report.v1",
+      "manifest": {
+        "schema": "ori.desktop_manifest.v1",
+        "platform": "macos",
+        "bundle_id": "com.example.app",
+        "product_name": "ExampleApp",
+        "version": "0.1.0",
+        "binary_targets": [
+          "aarch64",
+          "x86_64"
+        ],
+        "entitlements": {
+          "com.apple.security.network.client": "true"
+        },
+        "linux_categories": [],
+        "windows_subsystem": null,
+        "capabilities_required": [
+          "net.outbound"
+        ]
+      },
+      "artefacts": [
+        {
+          "path": "dist/macos/aarch64/ExampleApp.app",
+          "kind": "binary",
+          "bytes_estimate": 540000
+        }
+      ],
+      "warnings": []
+    }
+  ]
+}

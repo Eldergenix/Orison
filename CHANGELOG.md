@@ -1,5 +1,103 @@
 # CHANGELOG.md
 
+## 2026-05-17 — GOAL v2 wave 4 (M28b + M30 + M32 + M37 + runtime stdlib + Stage 1 + bench + schema validation)
+
+Ten more parallel agents closed every partial milestone in `GOAL.md`. The
+workspace test count grew from **855 → ~1003 passing / 0 failing**.
+`python3.13 scripts/validate_all.py --full` reports `validation passed`.
+
+### M32 LSP completeness
+- [x] **LSP semantic tokens, formatting, code lens (+ resolve), inlay hints,
+  folding ranges, selection ranges** in `crates/ori-lsp/src/{server,protocol}.rs`.
+  Adds `textDocument/semanticTokens/full`, `textDocument/formatting`,
+  `textDocument/codeLens`, `codeLens/resolve`, `textDocument/inlayHint`,
+  `textDocument/foldingRange`, `textDocument/selectionRange`. 18 new
+  integration tests (29 → 47 in ori-lsp).
+
+### M30 desktop target builder
+- [x] **Desktop manifests + build report** for macOS / Linux / Windows in
+  `crates/ori-compiler/src/desktop.rs`. Diagnostics `DSK0001`–`DSK0005`.
+  New CLI subcommand `ori build --target desktop --platform <p>`. Schema
+  `schemas/desktop-manifest.schema.json` published as
+  `ori.desktop_build_report.v1` (manifest payload as `ori.desktop_manifest.v1`).
+  16 unit tests + 1 CLI smoke test.
+
+### Runtime stdlib bodies (closes every M27-deferred marker)
+- [x] **22 runtime builtins** in `crates/ori-compiler/src/interp_exec.rs`
+  (`str.{len,contains,starts_with,ends_with,split,to_lower,to_upper,join}`,
+  `list.{len,is_empty,push,pop,map,filter}`,
+  `cache.{new,len,get,put,clear}`,
+  `url.{parse,scheme_of,host_of,path_of,append_query}`). Stdlib bodies in
+  `stdlib/core/{string,list}.ori`, `stdlib/std/{cache,url}.ori` now call
+  the builtins directly — M27-deferred count went from 20 → 0. New
+  `Value::Lambda`, `Value::Cache` interpreter variants. 28 new
+  `interp_exec` tests (16 → 44).
+
+### M37 publish workflow
+- [x] **`ori publish`** + **`ori registry yank`** in `crates/ori-pkg/src/publish.rs`
+  with diagnostics `PUB0001`–`PUB0005` and a deterministic fnv1a receipt
+  signature. Schema `schemas/publish-outcome.schema.json` published as
+  `ori.publish_outcome.v1`. 11 unit tests + 2 CLI smoke tests. Pre-existing
+  `ori.publish_receipt.v1` left untouched per stability policy.
+
+### M28b path-parameter routing + middleware + CORS
+- [x] **Path patterns** (`/users/:id`), **middleware chain**
+  (`Before`/`After` with short-circuit), **CORS preflight**, **slash
+  policy** (`Strict`/`Lenient` with 308 redirects), diagnostics
+  `R0050`/`R0051`/`R0052`. Schema `schemas/backend-dispatch-v2.schema.json`
+  published as `ori.backend_dispatch.v2` alongside the immutable v1. 13
+  new tests (15 → 28 in `backend_dispatch`).
+
+### Wave-2/3 conformance fixtures
+- [x] **26 new golden fixtures** for `E0220`–`E0222`, `B0060`–`B0080`,
+  `A0010`–`A0013`, `CAP0001`–`CAP0005`, `RND0001`–`RND0005`. 20 new
+  conformance tests (60 → 80). Byte-stable across re-runs.
+
+### Bench expansion
+- [x] **8 new bench suites**: `ui_render_latency`, `ui_diff_latency`,
+  `backend_dispatch_build_latency`, `backend_dispatch_call_latency`,
+  `capability_runtime_guard_latency`,
+  `model_loop_envelope_roundtrip_latency`, `async_parallel_throughput`,
+  `borrow_body_check_latency`. Suite count 32 → 40; metric count 40 → 49.
+  `BENCHMARKS.results.json` refreshed; `BENCHMARKS.md` updated.
+
+### Schema validation in CI
+- [x] **Hand-rolled Draft 2020-12 validator** in
+  `crates/ori-cli/src/schema_check.rs` (no new deps). Asserts every CLI
+  envelope round-trips against its declared schema across 20 shipping
+  subcommands. New CLI subcommand `ori schema validate --in <file>`.
+  35 tests (15 unit + 20 integration).
+
+### Example apps + tutorial chapters 11-14
+- [x] **`examples/desktop_hello/`**, **`examples/mobile_hello/`**,
+  **`examples/publish_hello/`** (all parse clean via `ori check`).
+- [x] **`docs/tutorial/{11-desktop-app, 12-mobile-app, 13-publishing,
+  14-agent-in-loop}.md`** (1400-1500 words each).
+
+### Stage 1 self-hosting prototype (M36 progression)
+- [x] **`compiler/stage1/{parser,lexer}.ori`** with `ModuleDecl`,
+  `ItemDecl`, `Token` shapes — Orison-in-Orison declarations. Both files
+  parse clean against the Rust bootstrap. 4 parity tests in
+  `crates/ori-compiler/tests/stage1_parity.rs`.
+  `docs/compiler/SELF_HOSTING.md` updated with `## Stage 1 prototype status`.
+
+### Doctor + schema inventory
+- [x] Doctor now lists **44 stable schema-versioned contracts** (was 40):
+  added `backend_dispatch.v2`, `desktop_build_report.v1`,
+  `desktop_manifest.v1`, `model_loop_telemetry.v1`,
+  `publish_outcome.v1`, `ui_render.v1`. Regression test updated to
+  recognise `-vN` filename suffixes.
+
+### Build hygiene
+- [x] Clippy under `-D warnings` is clean (fixed 11 lints introduced by
+  parallel agent work: `derive(Default)`, BTreeMap `.keys()`,
+  doc-list indentation, slice arg shape, char-array `.find()`,
+  collapsible `if`, range-loop, contains-instead-of-iter-any).
+- [x] `MAX_CALL_DEPTH` lowered from 256 to 64 for safe debug-profile
+  recursion; R0005 golden fixture re-blessed.
+
+---
+
 ## 2026-05-17 — GOAL v2 waves 2 + 3 (milestones M22, M23, M24, M25, M26, M27, M28, M29, M33, M35)
 
 Ten more parallel agents took the bootstrap from ~493 passing tests to

@@ -113,6 +113,14 @@ pub struct ServerCapabilities {
     pub document_symbol_provider: bool,
     pub definition_provider: bool,
     pub references_provider: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub semantic_tokens_provider: Option<SemanticTokensOptions>,
+    pub document_formatting_provider: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code_lens_provider: Option<CodeLensOptions>,
+    pub inlay_hint_provider: bool,
+    pub folding_range_provider: bool,
+    pub selection_range_provider: bool,
 }
 
 impl Default for ServerCapabilities {
@@ -127,8 +135,83 @@ impl Default for ServerCapabilities {
             document_symbol_provider: true,
             definition_provider: true,
             references_provider: true,
+            semantic_tokens_provider: Some(SemanticTokensOptions::default()),
+            document_formatting_provider: true,
+            code_lens_provider: Some(CodeLensOptions::default()),
+            inlay_hint_provider: true,
+            folding_range_provider: true,
+            selection_range_provider: true,
         }
     }
+}
+
+/// `semanticTokensProvider` capability advertising the legend used by
+/// `textDocument/semanticTokens/full` responses.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SemanticTokensOptions {
+    pub legend: SemanticTokensLegend,
+    pub full: bool,
+    pub range: bool,
+}
+
+impl Default for SemanticTokensOptions {
+    fn default() -> Self {
+        Self {
+            legend: SemanticTokensLegend::default(),
+            full: true,
+            range: false,
+        }
+    }
+}
+
+/// LSP `SemanticTokensLegend`. The arrays advertise which token types and
+/// modifiers the server is willing to emit, indexed by `tokenType` /
+/// `tokenModifiers` bit positions inside the `data` array.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SemanticTokensLegend {
+    pub token_types: Vec<String>,
+    pub token_modifiers: Vec<String>,
+}
+
+impl Default for SemanticTokensLegend {
+    fn default() -> Self {
+        Self {
+            token_types: SEMANTIC_TOKEN_TYPES
+                .iter()
+                .map(|s| (*s).to_string())
+                .collect(),
+            token_modifiers: Vec::new(),
+        }
+    }
+}
+
+/// Ordered list of token types this server emits. The index of each entry
+/// is what appears in the `tokenType` slot of the 5-tuple emitted by
+/// [`SemanticTokens::data`].
+pub const SEMANTIC_TOKEN_TYPES: &[&str] = &[
+    "namespace",
+    "type",
+    "struct",
+    "enum",
+    "function",
+    "parameter",
+    "variable",
+    "property",
+    "keyword",
+    "string",
+    "number",
+    "comment",
+    "operator",
+];
+
+/// `codeLensProvider` capability. We do not request explicit resolution;
+/// every lens is returned fully populated.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeLensOptions {
+    pub resolve_provider: bool,
 }
 
 /// `completionProvider` server capability advertisement.
@@ -535,6 +618,119 @@ pub struct SymbolInformation {
     pub location: Location,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub container_name: Option<String>,
+}
+
+/// `textDocument/semanticTokens/full` request params.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SemanticTokensParams {
+    pub text_document: TextDocumentIdentifier,
+}
+
+/// `SemanticTokens` response. `data` packs the LSP §3.17 5-tuple stream
+/// `(deltaLine, deltaStart, length, tokenType, tokenModifiers)` where every
+/// 5-tuple is relative to the previous tuple.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SemanticTokens {
+    pub data: Vec<u32>,
+}
+
+/// `textDocument/formatting` request params. Formatting options are
+/// accepted but ignored — `Compiler::format_source` is deterministic.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentFormattingParams {
+    pub text_document: TextDocumentIdentifier,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub options: Option<Value>,
+}
+
+/// `textDocument/codeLens` request params.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeLensParams {
+    pub text_document: TextDocumentIdentifier,
+}
+
+/// A single code lens. The bootstrap returns lenses with `command` already
+/// populated; `data` is preserved so `codeLens/resolve` can replay the
+/// payload verbatim.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeLens {
+    pub range: Range,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<Command>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<Value>,
+}
+
+/// LSP `Command` — purely informational here; we never invoke client-side
+/// commands from the bootstrap server.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Command {
+    pub title: String,
+    pub command: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub arguments: Vec<Value>,
+}
+
+/// `textDocument/inlayHint` request params.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InlayHintParams {
+    pub text_document: TextDocumentIdentifier,
+    pub range: Range,
+}
+
+/// `InlayHint` result entry. We always emit text-only hints with
+/// `kind = 1` (Type).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InlayHint {
+    pub position: Position,
+    pub label: String,
+    pub kind: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub padding_left: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub padding_right: Option<bool>,
+}
+
+/// `textDocument/foldingRange` request params.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FoldingRangeParams {
+    pub text_document: TextDocumentIdentifier,
+}
+
+/// One folding range. Lines are 0-based per the LSP spec.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FoldingRange {
+    pub start_line: u32,
+    pub end_line: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+}
+
+/// `textDocument/selectionRange` request params.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SelectionRangeParams {
+    pub text_document: TextDocumentIdentifier,
+    pub positions: Vec<Position>,
+}
+
+/// Nested selection range, walked from the smallest enclosing node outward.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SelectionRange {
+    pub range: Range,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<Box<SelectionRange>>,
 }
 
 /// Helper that constructs a notification envelope around an arbitrary

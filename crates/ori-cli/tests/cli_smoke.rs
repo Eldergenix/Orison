@@ -569,3 +569,166 @@ fn capability_check_dry_run_emits_runtime_envelope() {
         .any(|c| c == "CAP0001");
     assert!(denied, "expected at least one CAP0001 denial in: {out}");
 }
+
+/// `ori build --target desktop --platform macos --json examples/fullstack/users.ori`
+/// emits a single `ori.desktop_build_report.v1` envelope with a manifest
+/// shaped for macOS.
+#[test]
+fn build_target_desktop_macos_emits_report_envelope() {
+    let (code, out) = run(&[
+        "build",
+        "--target",
+        "desktop",
+        "--platform",
+        "macos",
+        "--json",
+        "examples/fullstack/users.ori",
+    ]);
+    assert_eq!(code, 0, "desktop macos build exit code");
+    let v = assert_envelope(&out, "ori.desktop_build_report.v1");
+    let platform = v
+        .pointer("/manifest/platform")
+        .and_then(|p| p.as_str())
+        .unwrap_or("");
+    assert_eq!(platform, "macos", "desktop macos build platform field");
+    let artefacts = v
+        .get("artefacts")
+        .and_then(|a| a.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
+    assert!(
+        artefacts >= 1,
+        "desktop macos build should produce ≥1 artefact, got {artefacts}"
+    );
+}
+
+// ---- M37 publish workflow smoke tests ----
+
+/// Build an isolated temp directory pair: (manifest_dir, registry_dir).
+/// The registry directory is pre-created so PUB0004 cannot fire on a
+/// stale path; the manifest is a minimal valid `ori.manifest.v1`.
+fn publish_fixture(label: &str) -> (PathBuf, PathBuf) {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let pid = std::process::id();
+    let base = std::env::temp_dir().join(format!("ori-cli-publish-{label}-{pid}-{nanos}"));
+    let manifest_dir = base.join("manifest");
+    let registry_dir = base.join("registry");
+    for dir in [&manifest_dir, &registry_dir] {
+        if let Err(err) = std::fs::create_dir_all(dir) {
+            #[allow(clippy::assertions_on_constants)]
+            {
+                assert!(
+                    false,
+                    "could not create fixture dir {}: {err}",
+                    dir.display()
+                );
+            }
+        }
+    }
+    let manifest_text = "schema = \"ori.manifest.v1\"\n\
+        [package]\n\
+        name = \"app.smoke\"\n\
+        version = \"0.1.0\"\n\
+        edition = \"2027.1\"\n\
+        [capabilities]\n\
+        declared = []\n\
+        denied = []\n";
+    if let Err(err) = std::fs::write(manifest_dir.join("ori.toml"), manifest_text) {
+        #[allow(clippy::assertions_on_constants)]
+        {
+            assert!(false, "could not write fixture manifest: {err}");
+        }
+    }
+    (manifest_dir, registry_dir)
+}
+
+#[test]
+fn publish_dry_run_emits_publish_outcome_envelope() {
+    let (manifest_dir, registry_dir) = publish_fixture("dry");
+    let manifest_path = manifest_dir.join("ori.toml");
+    let manifest_str = manifest_path.to_string_lossy().to_string();
+    let registry_str = registry_dir.to_string_lossy().to_string();
+    let (code, out) = run(&[
+        "publish",
+        "--dry-run",
+        "--manifest",
+        &manifest_str,
+        "--registry",
+        &registry_str,
+    ]);
+    assert_eq!(code, 0, "publish --dry-run exit code (stdout: {out})");
+    let v = assert_envelope(&out, "ori.publish_outcome.v1");
+    let status_kind = v
+        .pointer("/status/kind")
+        .and_then(|s| s.as_str())
+        .unwrap_or("");
+    assert_eq!(status_kind, "skipped", "dry-run must report skipped");
+    let pkg = v.get("package").and_then(|p| p.as_str()).unwrap_or("");
+    assert_eq!(pkg, "app.smoke");
+    let signature = v
+        .pointer("/receipt/signature")
+        .and_then(|s| s.as_str())
+        .unwrap_or("");
+    assert!(
+        signature.starts_with("fnv1a:"),
+        "expected fnv1a stub signature, got `{signature}`"
+    );
+    let _ = std::fs::remove_dir_all(manifest_dir.parent().unwrap_or(&manifest_dir));
+}
+
+#[test]
+fn registry_yank_emits_registry_list_envelope() {
+    let (manifest_dir, registry_dir) = publish_fixture("yank");
+    let manifest_path = manifest_dir.join("ori.toml");
+    let manifest_str = manifest_path.to_string_lossy().to_string();
+    let registry_str = registry_dir.to_string_lossy().to_string();
+
+    let (code, out) = run(&[
+        "publish",
+        "--manifest",
+        &manifest_str,
+        "--registry",
+        &registry_str,
+    ]);
+    assert_eq!(code, 0, "publish exit code (stdout: {out})");
+    let v = assert_envelope(&out, "ori.publish_outcome.v1");
+    let status_kind = v
+        .pointer("/status/kind")
+        .and_then(|s| s.as_str())
+        .unwrap_or("");
+    assert_eq!(status_kind, "accepted");
+
+    let (yank_code, yank_out) = run(&[
+        "registry",
+        "yank",
+        "--registry",
+        &registry_str,
+        "--package",
+        "app.smoke",
+        "--version",
+        "0.1.0",
+        "--json",
+    ]);
+    assert_eq!(yank_code, 0, "yank exit code (stdout: {yank_out})");
+    let listing = assert_envelope(&yank_out, "ori.registry_list.v1");
+    let packages = listing
+        .get("packages")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    assert_eq!(packages.len(), 1, "yank envelope must list the package");
+    let yanked = packages
+        .first()
+        .and_then(|p| p.get("yanked"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    assert!(
+        yanked,
+        "package must be marked yanked after yank: {yank_out}"
+    );
+
+    let _ = std::fs::remove_dir_all(manifest_dir.parent().unwrap_or(&manifest_dir));
+}

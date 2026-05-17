@@ -1,0 +1,28 @@
+// capsule: mobile_hello.domain — pure types for the mobile hello example
+module mobile_hello.domain
+
+// Pure value types used by every other module. No imports, no effects.
+// `UserId` and `Username` wrap `Str` so a user identifier and a display
+// name cannot be silently substituted for each other at a call site.
+
+type UserId wraps Str
+type Username wraps Str
+
+type Profile = {
+  id: UserId,
+  username: Username,
+  avatar_url: Str,
+  follower_count: Int
+}
+
+type FeedItem = {
+  id: Str,
+  author: Username,
+  text: Str,
+  posted_at_unix_seconds: Int
+}
+
+variant ProfileError =
+  | NotFound(id: UserId)
+  | NetworkFailed(reason: Str)
+  | Unauthorised

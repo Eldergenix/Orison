@@ -1,0 +1,67 @@
+// capsule: compiler.stage1.lexer — Orison-in-Orison tokeniser (Stage 1 prototype).
+//
+// Mirrors the surface of the Rust bootstrap lexer in
+// `crates/ori-compiler/src/lexer.rs`: a flat token stream where every
+// token carries a discriminator, the verbatim lexeme, and a 1-based
+// source offset. Keywords are folded out as a separate variant so the
+// downstream parser does not re-classify them.
+//
+// As with `compiler.stage1.parser`, this module's headers parse clean
+// against the Rust bootstrap but its bodies still return empty
+// placeholders. The bootstrap interpreter cannot execute the inner
+// scanning loop until M27 ships `str` and `list` runtime primitives
+// (see SELF_HOSTING.md §3.2). The shape and exported symbols are
+// asserted by `crates/ori-compiler/tests/stage1_parity.rs`.
+
+module compiler.stage1.lexer
+
+import core.list
+import core.option
+
+// One lexed token. The variant names mirror
+// `crates/ori-compiler/src/lexer.rs::TokenKind` so the Stage 2
+// transition can route the Orison-side AST into the Rust pipeline
+// one-for-one. `offset` is a byte offset into the original source.
+type Token =
+  | Ident(offset: Int, lexeme: String)
+  | Keyword(offset: Int, lexeme: String)
+  | Number(offset: Int, lexeme: String)
+  | StrLit(offset: Int, lexeme: String)
+  | Symbol(offset: Int, lexeme: String)
+  | Eof(offset: Int)
+
+// True when `lexeme` is one of the Orison bootstrap keywords. Mirrors
+// `lexer::is_keyword` in the Rust bootstrap; the canonical list lives
+// there and is the schema-immutable source of truth. Stage 1 stub.
+fn is_keyword(lexeme: String) -> Bool:
+  return false
+
+// Scan `source` into a flat token stream. Mirrors `lexer::lex` in the
+// Rust bootstrap. Stage 1 stub: returns an empty list, because the
+// interpreter cannot yet execute the inner character loop. Stage 2
+// replaces this with a hand-written scanner once `str.len`,
+// `str.char_at`, and `list.push` are available at runtime.
+fn lex(source: String) -> List[Token]:
+  return List.empty()
+
+// Convenience constructor used by the (future) scanner to emit the
+// trailing `Eof` sentinel. Pure: returns the input offset wrapped in
+// `Eof`. Useful even at Stage 1 because it exercises a variant
+// constructor on a generic-free shape.
+fn eof_at(offset: Int) -> Token:
+  return Eof(offset: offset)
+
+// True when `ch` may start an identifier. Stage 1 stub mirroring the
+// Rust bootstrap's `is_ascii_alphabetic() || ch == '_'` rule.
+fn is_ident_start(ch: String) -> Bool:
+  return false
+
+// True when `ch` may continue an identifier.
+fn is_ident_continue(ch: String) -> Bool:
+  return false
+
+// True when `ch` is a single ASCII whitespace character recognised by
+// the bootstrap lexer (space, tab, CR). Newlines are handled separately
+// because they bump line/column tracking.
+fn is_whitespace(ch: String) -> Bool:
+  return false

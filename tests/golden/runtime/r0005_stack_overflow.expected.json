@@ -1,1 +1,1 @@
-{"code":"R0005","message":"call stack exceeded 256 frames while invoking `loop_`","observed_effects":[],"schema":"ori.runtime.v1","source":"tests/golden/runtime/r0005_stack_overflow.ori"}
+{"code":"R0005","message":"call stack exceeded 64 frames while invoking `loop_`","observed_effects":[],"schema":"ori.runtime.v1","source":"tests/golden/runtime/r0005_stack_overflow.ori"}

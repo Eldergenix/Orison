@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ori.backend_dispatch.v2",
+  "title": "Orison Backend Dispatch Report v2",
+  "description": "Deterministic snapshot of the runtime HTTP dispatch table (M28b). Extends v1 with `middleware` and `slash_policy` and allows `:name` path parameters in `path` values. One entry per (method, path) pair, sorted ascending.",
+  "type": "object",
+  "required": [
+    "schema",
+    "route_count",
+    "routes",
+    "middleware",
+    "slash_policy"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.backend_dispatch.v2"
+    },
+    "route_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "routes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "symbol_id",
+          "method",
+          "path",
+          "effects",
+          "principal_required"
+        ],
+        "properties": {
+          "symbol_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "method": {
+            "enum": [
+              "GET",
+              "POST",
+              "PUT",
+              "PATCH",
+              "DELETE",
+              "OPTIONS",
+              "HEAD"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Path pattern; may contain `:name` parameter segments such as `/users/:id`."
+          },
+          "effects": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "principal_required": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "middleware": {
+      "type": "array",
+      "description": "Configured middleware chain. `before` entries run in insertion order; `after` entries run in reverse insertion order.",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "kind"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "enum": [
+              "before",
+              "after"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "slash_policy": {
+      "enum": [
+        "strict",
+        "lenient"
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.backend_dispatch.v2",
+      "route_count": 1,
+      "routes": [
+        {
+          "symbol_id": "sym:demo.get_users_id",
+          "method": "GET",
+          "path": "/users/:id",
+          "effects": [
+            "db.read",
+            "http"
+          ],
+          "principal_required": true
+        }
+      ],
+      "middleware": [
+        {
+          "name": "cors",
+          "kind": "before"
+        }
+      ],
+      "slash_policy": "strict"
+    }
+  ]
+}

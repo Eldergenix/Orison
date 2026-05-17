@@ -1,0 +1,20 @@
+// capsule: desktop_hello.notes — note storage service for the desktop app
+module desktop_hello.notes
+
+import desktop_hello.domain
+
+// `NoteStore` is the typed service that the desktop binary exposes to the
+// front-end. It uses three effects: `fs.read` and `fs.write` to persist the
+// notes to disk, and `ui` because the front-end calls these functions from
+// view handlers. Capabilities are declared once on the service so the
+// runtime can grant or deny each at boot.
+
+service NoteStore uses fs.read, fs.write, ui
+
+fn list_notes() -> Result[NoteList, NoteError] uses fs.read
+
+fn read_note(id: NoteId) -> Result[Note, NoteError] uses fs.read
+
+fn save_note(body: NoteBody, now_unix_seconds: Int) -> Result[Note, NoteError] uses fs.write
+
+fn delete_note(id: NoteId) -> Result[Unit, NoteError] uses fs.write

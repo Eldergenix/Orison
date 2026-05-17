@@ -1,0 +1,15 @@
+// capsule: desktop_hello.main — desktop entry point
+module desktop_hello.main
+
+import desktop_hello.domain
+import desktop_hello.notes
+
+// `boot` is the entry point a desktop binary calls after the runtime has
+// resolved its capabilities. The effects it declares — `ui`, `fs.read`,
+// `fs.write` — are exactly the ones that show up in the `ori.toml`
+// `[capabilities].declared` list, and are also what the `ori build`
+// audit will match against the system permissions the desktop platform
+// can actually grant.
+
+fn boot() -> Unit uses ui, fs.read, fs.write:
+  return Unit

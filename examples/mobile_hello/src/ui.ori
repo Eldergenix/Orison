@@ -1,0 +1,27 @@
+// capsule: mobile_hello.ui — typed view surface for the mobile app
+module mobile_hello.ui
+
+import mobile_hello.domain
+
+// `ProfileView` and `FeedView` are the two typed views exported to the
+// native shell. The `ori build --target mobile` step turns each `view`
+// declaration into a corresponding native component declaration in
+// `ori.native_ui_manifest.v1` (e.g. a SwiftUI `View` for `ios-swiftui`
+// or a Composable for `android-compose`). Props are mapped 1:1 from
+// the Orison type signature.
+
+view ProfileView(profile: Profile) -> Html uses ui:
+  card:
+    heading(level: 1, text: profile.username.value)
+    text(profile.avatar_url)
+
+view FeedView(items: List[FeedItem]) -> Html uses ui:
+  list:
+    for item in items:
+      heading(level: 3, text: item.author.value)
+      text(item.text)
+
+view SettingsView(profile: Profile) -> Html uses ui, auth:
+  form:
+    heading(level: 2, text: "Settings")
+    text(profile.username.value)

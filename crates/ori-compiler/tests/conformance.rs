@@ -1471,6 +1471,585 @@ fn golden_p1010_stale_target() {
 }
 
 // ---------------------------------------------------------------------------
+// Wave-2 / Wave-3 additions: type inference (E022x), borrow regions
+// (B006x..B008x), async runtime parallel diagnostics (A001x), runtime
+// capability (CAP000x), and UI render (RND000x).
+//
+// These cover the diagnostics surfaced by the M22 / M23 / M26 / M29 / M35
+// pipelines whose public entry points either return `Diagnostic` directly
+// (E022x, B006x..B008x) or return runtime/value structs that the test
+// wraps into a stable JSON envelope (A001x, CAP000x, RND000x).
+// ---------------------------------------------------------------------------
+
+// --- Type inference (M22): E0220, E0221, E0222 -----------------------------
+
+fn type_infer_diagnostics(rel: &str) -> Vec<Diagnostic> {
+    let source = load_source(rel);
+    let module = parse_source(&source).module;
+    let bodies = parse_module_bodies(&source);
+    ori_compiler::type_infer::check_module_bodies(&module, &bodies)
+}
+
+#[test]
+fn golden_e0220_binop_mismatch() {
+    let diags = type_infer_diagnostics("tests/golden/diagnostics/e0220_binop_mismatch.ori");
+    let actual = diagnostics_filtered_jsonl(&diags, "E0220");
+    assert_jsonl_fixture(
+        "tests/golden/diagnostics/e0220_binop_mismatch.expected.jsonl",
+        "tests/golden/diagnostics/e0220_binop_mismatch.expected.jsonl",
+        &actual,
+    );
+    validate_each_recorded_diagnostic(
+        "tests/golden/diagnostics/e0220_binop_mismatch.expected.jsonl",
+    );
+}
+
+#[test]
+fn golden_e0221_unop_mismatch() {
+    let diags = type_infer_diagnostics("tests/golden/diagnostics/e0221_unop_mismatch.ori");
+    let actual = diagnostics_filtered_jsonl(&diags, "E0221");
+    assert_jsonl_fixture(
+        "tests/golden/diagnostics/e0221_unop_mismatch.expected.jsonl",
+        "tests/golden/diagnostics/e0221_unop_mismatch.expected.jsonl",
+        &actual,
+    );
+    validate_each_recorded_diagnostic(
+        "tests/golden/diagnostics/e0221_unop_mismatch.expected.jsonl",
+    );
+}
+
+#[test]
+fn golden_e0222_return_mismatch() {
+    let diags = type_infer_diagnostics("tests/golden/diagnostics/e0222_return_mismatch.ori");
+    let actual = diagnostics_filtered_jsonl(&diags, "E0222");
+    assert_jsonl_fixture(
+        "tests/golden/diagnostics/e0222_return_mismatch.expected.jsonl",
+        "tests/golden/diagnostics/e0222_return_mismatch.expected.jsonl",
+        &actual,
+    );
+    validate_each_recorded_diagnostic(
+        "tests/golden/diagnostics/e0222_return_mismatch.expected.jsonl",
+    );
+}
+
+// --- Borrow regions (M23): B0060, B0070, B0080 ----------------------------
+
+#[test]
+fn golden_b0060_move_after_use() {
+    let source = load_source("tests/golden/diagnostics/b0060_move_after_use.ori");
+    let diags = ori_compiler::borrow::borrow_check_source(&source);
+    let actual = diagnostics_filtered_jsonl(&diags, "B0060");
+    assert_jsonl_fixture(
+        "tests/golden/diagnostics/b0060_move_after_use.expected.jsonl",
+        "tests/golden/diagnostics/b0060_move_after_use.expected.jsonl",
+        &actual,
+    );
+    validate_each_recorded_diagnostic(
+        "tests/golden/diagnostics/b0060_move_after_use.expected.jsonl",
+    );
+}
+
+#[test]
+fn golden_b0070_mut_after_shared() {
+    let source = load_source("tests/golden/diagnostics/b0070_mut_after_shared.ori");
+    let diags = ori_compiler::borrow::borrow_check_source(&source);
+    let actual = diagnostics_filtered_jsonl(&diags, "B0070");
+    assert_jsonl_fixture(
+        "tests/golden/diagnostics/b0070_mut_after_shared.expected.jsonl",
+        "tests/golden/diagnostics/b0070_mut_after_shared.expected.jsonl",
+        &actual,
+    );
+    validate_each_recorded_diagnostic(
+        "tests/golden/diagnostics/b0070_mut_after_shared.expected.jsonl",
+    );
+}
+
+#[test]
+fn golden_b0080_escapes_region() {
+    let source = load_source("tests/golden/diagnostics/b0080_escapes_region.ori");
+    let diags = ori_compiler::borrow::borrow_check_source(&source);
+    let actual = diagnostics_filtered_jsonl(&diags, "B0080");
+    assert_jsonl_fixture(
+        "tests/golden/diagnostics/b0080_escapes_region.expected.jsonl",
+        "tests/golden/diagnostics/b0080_escapes_region.expected.jsonl",
+        &actual,
+    );
+    validate_each_recorded_diagnostic(
+        "tests/golden/diagnostics/b0080_escapes_region.expected.jsonl",
+    );
+}
+
+// --- Async runtime (M26): A0010, A0011, A0012, A0013 -----------------------
+// These diagnostic ids only surface as bare strings inside `AsyncReport`
+// today; the test wraps the report into a stable JSON envelope keyed by
+// `ori.async_report.v1` so the fixtures stay byte-stable.
+
+fn async_report_diag_jsonl(report: &ori_compiler::async_runtime::AsyncReport, id: &str) -> String {
+    let mut out = String::new();
+    if report.diagnostics.iter().any(|d| d == id) {
+        let value = serde_json::json!({
+            "schema": "ori.async_report.v1",
+            "id": id,
+            "worker_count": report.worker_count,
+            "total_tasks": report.total_tasks,
+            "completed": report.completed,
+            "cancelled": report.cancelled,
+            "panicked": report.panicked,
+            "diagnostics": report.diagnostics,
+        });
+        out.push_str(&value.to_string());
+        out.push('\n');
+    }
+    out
+}
+
+fn assert_async_report_fixture(report_jsonl: &str, expected_rel: &str) {
+    let expected_path = workspace_root().join(expected_rel);
+    if bless_mode() {
+        write_text(&expected_path, report_jsonl);
+        return;
+    }
+    let expected_text = read_text(&expected_path);
+    let actual_value = parse_json(report_jsonl.trim(), expected_rel);
+    let expected_value = parse_json(expected_text.trim(), expected_rel);
+    assert_json_eq(expected_rel, &actual_value, &expected_value);
+}
+
+#[test]
+fn golden_a0010_worker_panic() {
+    use ori_compiler::async_runtime::ParallelScheduler;
+    use std::time::Duration;
+    let mut pool = ParallelScheduler::new();
+    // A body that panics deterministically; the worker catches it via
+    // catch_unwind and records A0010.
+    pool.submit(|| {
+        #[allow(clippy::assertions_on_constants)]
+        {
+            assert!(false, "deliberate panic for A0010 fixture");
+        }
+        ori_compiler::interp_exec::Value::Unit
+    });
+    let report = pool.run(1, 1, Duration::from_millis(500));
+    let actual = async_report_diag_jsonl(&report, "A0010");
+    assert_async_report_fixture(
+        &actual,
+        "tests/golden/async/a0010_worker_panic.expected.jsonl",
+    );
+}
+
+#[test]
+fn golden_a0011_task_starvation() {
+    use ori_compiler::async_runtime::ParallelScheduler;
+    use std::time::Duration;
+    let mut pool = ParallelScheduler::new();
+    // Submit a task, then call `run` with zero workers. The orchestrator
+    // never drains the queue, so `executed (0) < accepted (1)` and the
+    // finaliser surfaces A0011.
+    pool.submit(|| ori_compiler::interp_exec::Value::Unit);
+    let report = pool.run(0, 1, Duration::from_millis(500));
+    let actual = async_report_diag_jsonl(&report, "A0011");
+    assert_async_report_fixture(
+        &actual,
+        "tests/golden/async/a0011_task_starvation.expected.jsonl",
+    );
+}
+
+#[test]
+fn golden_a0012_shutdown_timeout() {
+    use ori_compiler::async_runtime::ParallelScheduler;
+    use std::time::Duration;
+    let mut pool = ParallelScheduler::new();
+    // Submit one task, run with zero grace — the join loop notices the
+    // deadline has already passed before draining workers and records
+    // A0012 once.
+    pool.submit(|| ori_compiler::interp_exec::Value::Unit);
+    let report = pool.run(1, 1, Duration::from_nanos(0));
+    let actual = async_report_diag_jsonl(&report, "A0012");
+    assert_async_report_fixture(
+        &actual,
+        "tests/golden/async/a0012_shutdown_timeout.expected.jsonl",
+    );
+}
+
+#[test]
+fn golden_a0013_max_workers_exceeded() {
+    use ori_compiler::async_runtime::{ParallelScheduler, MAX_WORKERS};
+    use std::time::Duration;
+    let mut pool = ParallelScheduler::new();
+    // Ask for more workers than the policy cap. The orchestrator clamps
+    // to MAX_WORKERS and inserts A0013.
+    let _ = MAX_WORKERS;
+    let report = pool.run(300, 1, Duration::from_millis(500));
+    let actual = async_report_diag_jsonl(&report, "A0013");
+    assert_async_report_fixture(
+        &actual,
+        "tests/golden/async/a0013_max_workers_exceeded.expected.jsonl",
+    );
+}
+
+// --- Runtime capability (M35): CAP0001..CAP0005 ----------------------------
+// The capability runtime emits `GuardOutcome` values rather than full
+// `Diagnostic` records. The conformance suite pins a small envelope
+// keyed by `ori.capability_runtime.v1` so the contract is byte-stable.
+
+fn cap_outcome_to_json(
+    rel: &str,
+    code: &str,
+    outcome: &ori_compiler::capability_runtime::GuardOutcome,
+    audit: &[ori_compiler::capability_runtime::AuditEntry],
+) -> String {
+    let (outcome_tag, reason) = match outcome {
+        ori_compiler::capability_runtime::GuardOutcome::Allowed => ("allowed", String::new()),
+        ori_compiler::capability_runtime::GuardOutcome::Denied { code: c, reason: r } => {
+            ("denied", format!("{c}: {r}"))
+        }
+    };
+    let audit_codes: Vec<String> = audit.iter().map(|e| e.code.to_string()).collect();
+    let value = serde_json::json!({
+        "schema": "ori.capability_runtime.v1",
+        "source": rel,
+        "code": code,
+        "outcome": outcome_tag,
+        "reason": reason,
+        "audit": audit_codes,
+    });
+    format!("{value}\n")
+}
+
+fn assert_cap_fixture(actual_json: &str, expected_rel: &str) {
+    let expected_path = workspace_root().join(expected_rel);
+    if bless_mode() {
+        write_text(&expected_path, actual_json);
+        return;
+    }
+    let expected_text = read_text(&expected_path);
+    let actual_value = parse_json(actual_json.trim(), expected_rel);
+    let expected_value = parse_json(expected_text.trim(), expected_rel);
+    assert_json_eq(expected_rel, &actual_value, &expected_value);
+}
+
+fn cap_set_with(
+    tokens: &[(&str, &str, Option<u64>)],
+    denials: &[&str],
+    audit: &[&str],
+) -> ori_compiler::capability_runtime::CapabilitySet {
+    use ori_compiler::capability_runtime::{CapabilitySet, CapabilityToken};
+    use std::collections::{BTreeMap, BTreeSet};
+    let mut t: BTreeMap<String, CapabilityToken> = BTreeMap::new();
+    for (effect, issued_to, expires_at) in tokens {
+        t.insert(
+            (*effect).to_string(),
+            CapabilityToken {
+                effect: (*effect).to_string(),
+                issued_to: (*issued_to).to_string(),
+                expires_at: *expires_at,
+            },
+        );
+    }
+    let mut d: BTreeSet<String> = BTreeSet::new();
+    for s in denials {
+        d.insert((*s).to_string());
+    }
+    let mut a: BTreeSet<String> = BTreeSet::new();
+    for s in audit {
+        a.insert((*s).to_string());
+    }
+    CapabilitySet {
+        tokens: t,
+        denials: d,
+        audit_required: a,
+    }
+}
+
+fn cap_ctx(
+    principal: &str,
+    caller: &str,
+    effects: &[&str],
+    caps: ori_compiler::capability_runtime::CapabilitySet,
+) -> ori_compiler::capability_runtime::CallContext {
+    use ori_compiler::capability_runtime::CallContext;
+    use std::collections::BTreeSet;
+    let mut req: BTreeSet<String> = BTreeSet::new();
+    for e in effects {
+        req.insert((*e).to_string());
+    }
+    CallContext {
+        caller_symbol: caller.to_string(),
+        required_effects: req,
+        principal_id: principal.to_string(),
+        capabilities: caps,
+    }
+}
+
+#[test]
+fn golden_cap0001_missing_capability() {
+    use ori_compiler::capability_runtime::guard_call_with_audit_at;
+    let caps = cap_set_with(&[], &[], &[]);
+    let ctx = cap_ctx("alice", "sym:demo.read_secret", &["secret.read"], caps);
+    let (outcome, audit) = guard_call_with_audit_at(&ctx, 1_700_000_000);
+    let actual = cap_outcome_to_json(
+        "tests/golden/runtime/cap0001_missing_capability.expected.json",
+        "CAP0001",
+        &outcome,
+        &audit,
+    );
+    assert_cap_fixture(
+        &actual,
+        "tests/golden/runtime/cap0001_missing_capability.expected.json",
+    );
+}
+
+#[test]
+fn golden_cap0002_token_expired() {
+    use ori_compiler::capability_runtime::guard_call_with_audit_at;
+    // Token expired at t=100; we evaluate at t=200 → CAP0002.
+    let caps = cap_set_with(&[("http", "alice", Some(100))], &[], &[]);
+    let ctx = cap_ctx("alice", "sym:demo.call_out", &["http"], caps);
+    let (outcome, audit) = guard_call_with_audit_at(&ctx, 200);
+    let actual = cap_outcome_to_json(
+        "tests/golden/runtime/cap0002_token_expired.expected.json",
+        "CAP0002",
+        &outcome,
+        &audit,
+    );
+    assert_cap_fixture(
+        &actual,
+        "tests/golden/runtime/cap0002_token_expired.expected.json",
+    );
+}
+
+#[test]
+fn golden_cap0003_principal_mismatch() {
+    use ori_compiler::capability_runtime::guard_call_with_audit_at;
+    // Token issued to bob, call performed by alice → CAP0003.
+    let caps = cap_set_with(&[("db.write", "bob", None)], &[], &[]);
+    let ctx = cap_ctx("alice", "sym:demo.write_row", &["db.write"], caps);
+    let (outcome, audit) = guard_call_with_audit_at(&ctx, 1_700_000_000);
+    let actual = cap_outcome_to_json(
+        "tests/golden/runtime/cap0003_principal_mismatch.expected.json",
+        "CAP0003",
+        &outcome,
+        &audit,
+    );
+    assert_cap_fixture(
+        &actual,
+        "tests/golden/runtime/cap0003_principal_mismatch.expected.json",
+    );
+}
+
+#[test]
+fn golden_cap0004_denied_by_policy() {
+    use ori_compiler::capability_runtime::guard_call_with_audit_at;
+    // A token exists, but the effect is also on the denials allowlist.
+    // CAP0004 wins.
+    let caps = cap_set_with(&[("net.outbound", "alice", None)], &["net.outbound"], &[]);
+    let ctx = cap_ctx("alice", "sym:demo.fetch", &["net.outbound"], caps);
+    let (outcome, audit) = guard_call_with_audit_at(&ctx, 1_700_000_000);
+    let actual = cap_outcome_to_json(
+        "tests/golden/runtime/cap0004_denied_by_policy.expected.json",
+        "CAP0004",
+        &outcome,
+        &audit,
+    );
+    assert_cap_fixture(
+        &actual,
+        "tests/golden/runtime/cap0004_denied_by_policy.expected.json",
+    );
+}
+
+#[test]
+fn golden_cap0005_audit_required() {
+    use ori_compiler::capability_runtime::guard_call_with_audit_at;
+    // Effect is on the audit_required list, token is valid → Allowed
+    // outcome plus a CAP0005 audit entry.
+    let caps = cap_set_with(&[("db.read", "alice", None)], &[], &["db.read"]);
+    let ctx = cap_ctx("alice", "sym:demo.read_table", &["db.read"], caps);
+    let (outcome, audit) = guard_call_with_audit_at(&ctx, 1_700_000_000);
+    let actual = cap_outcome_to_json(
+        "tests/golden/runtime/cap0005_audit_required.expected.json",
+        "CAP0005",
+        &outcome,
+        &audit,
+    );
+    assert_cap_fixture(
+        &actual,
+        "tests/golden/runtime/cap0005_audit_required.expected.json",
+    );
+}
+
+// --- UI render (M29): RND0001..RND0005 -------------------------------------
+// `render_view` returns `Result<RenderTree, RenderError>`. The conformance
+// fixture pins the `RenderError` shape as a single JSON line so the
+// fixture stays byte-stable across runs.
+
+fn render_error_to_json(rel: &str, err: &ori_compiler::ui_render::RenderError) -> String {
+    let value = match serde_json::to_value(err) {
+        Ok(v) => v,
+        Err(_) => Value::Null,
+    };
+    let envelope = serde_json::json!({
+        "schema": "ori.ui_render.v1",
+        "source": rel,
+        "code": err.id(),
+        "error": value,
+    });
+    format!("{envelope}\n")
+}
+
+fn assert_render_fixture(actual_json: &str, expected_rel: &str) {
+    let expected_path = workspace_root().join(expected_rel);
+    if bless_mode() {
+        write_text(&expected_path, actual_json);
+        return;
+    }
+    let expected_text = read_text(&expected_path);
+    let actual_value = parse_json(actual_json.trim(), expected_rel);
+    let expected_value = parse_json(expected_text.trim(), expected_rel);
+    assert_json_eq(expected_rel, &actual_value, &expected_value);
+}
+
+#[test]
+fn golden_rnd0001_unknown_view_kind() {
+    use ori_compiler::ui_render::{render_view, PropValue, ViewDecl, ViewTemplate};
+    use std::collections::BTreeMap;
+    let body = ViewTemplate::leaf("Container").with_child(ViewTemplate::leaf("MysteryBox"));
+    let mut view = ViewDecl::placeholder("App", vec![]).with_body(body);
+    // Drop the auto-collected `MysteryBox` so it becomes unknown at render time.
+    view.allowed_kinds.remove("MysteryBox");
+    let err = match render_view(&view, &BTreeMap::<String, PropValue>::new()) {
+        Err(e) => e,
+        Ok(_) => {
+            #[allow(clippy::assertions_on_constants)]
+            {
+                assert!(false, "expected RND0001 from unknown view kind");
+            }
+            unreachable!();
+        }
+    };
+    let actual = render_error_to_json(
+        "tests/golden/runtime/rnd0001_unknown_view_kind.expected.json",
+        &err,
+    );
+    assert_render_fixture(
+        &actual,
+        "tests/golden/runtime/rnd0001_unknown_view_kind.expected.json",
+    );
+}
+
+#[test]
+fn golden_rnd0002_prop_type_mismatch() {
+    use ori_compiler::ui_render::{render_view, PropSlot, PropValue, ViewDecl};
+    use std::collections::BTreeMap;
+    let view = ViewDecl::placeholder("Counter", vec![PropSlot::required_int("value")]);
+    let mut props: BTreeMap<String, PropValue> = BTreeMap::new();
+    props.insert(
+        "value".to_string(),
+        PropValue::Str("not-an-int".to_string()),
+    );
+    let err = match render_view(&view, &props) {
+        Err(e) => e,
+        Ok(_) => {
+            #[allow(clippy::assertions_on_constants)]
+            {
+                assert!(false, "expected RND0002 from prop type mismatch");
+            }
+            unreachable!();
+        }
+    };
+    let actual = render_error_to_json(
+        "tests/golden/runtime/rnd0002_prop_type_mismatch.expected.json",
+        &err,
+    );
+    assert_render_fixture(
+        &actual,
+        "tests/golden/runtime/rnd0002_prop_type_mismatch.expected.json",
+    );
+}
+
+#[test]
+fn golden_rnd0003_missing_required_prop() {
+    use ori_compiler::ui_render::{render_view, PropSlot, PropValue, ViewDecl};
+    use std::collections::BTreeMap;
+    let view = ViewDecl::placeholder("Hello", vec![PropSlot::required_str("name")]);
+    let err = match render_view(&view, &BTreeMap::<String, PropValue>::new()) {
+        Err(e) => e,
+        Ok(_) => {
+            #[allow(clippy::assertions_on_constants)]
+            {
+                assert!(false, "expected RND0003 from missing required prop");
+            }
+            unreachable!();
+        }
+    };
+    let actual = render_error_to_json(
+        "tests/golden/runtime/rnd0003_missing_required_prop.expected.json",
+        &err,
+    );
+    assert_render_fixture(
+        &actual,
+        "tests/golden/runtime/rnd0003_missing_required_prop.expected.json",
+    );
+}
+
+#[test]
+fn golden_rnd0004_duplicate_key() {
+    use ori_compiler::ui_render::{render_view, PropValue, ViewDecl, ViewTemplate};
+    use std::collections::BTreeMap;
+    let body = ViewTemplate::leaf("List")
+        .with_child(ViewTemplate::leaf("Item").with_key("a"))
+        .with_child(ViewTemplate::leaf("Item").with_key("a"));
+    let view = ViewDecl::placeholder("KeyedList", vec![]).with_body(body);
+    let err = match render_view(&view, &BTreeMap::<String, PropValue>::new()) {
+        Err(e) => e,
+        Ok(_) => {
+            #[allow(clippy::assertions_on_constants)]
+            {
+                assert!(false, "expected RND0004 from duplicate sibling key");
+            }
+            unreachable!();
+        }
+    };
+    let actual = render_error_to_json(
+        "tests/golden/runtime/rnd0004_duplicate_key.expected.json",
+        &err,
+    );
+    assert_render_fixture(
+        &actual,
+        "tests/golden/runtime/rnd0004_duplicate_key.expected.json",
+    );
+}
+
+#[test]
+fn golden_rnd0005_excessive_depth() {
+    use ori_compiler::ui_render::{render_view, PropValue, ViewDecl, ViewTemplate};
+    use std::collections::BTreeMap;
+    // Build a chain of 80 nested templates (> the MAX_RENDER_DEPTH of 64).
+    let mut body = ViewTemplate::leaf("Deep");
+    for _ in 0..80 {
+        body = ViewTemplate::leaf("Deep").with_child(body);
+    }
+    let view = ViewDecl::placeholder("Deep", vec![]).with_body(body);
+    let err = match render_view(&view, &BTreeMap::<String, PropValue>::new()) {
+        Err(e) => e,
+        Ok(_) => {
+            #[allow(clippy::assertions_on_constants)]
+            {
+                assert!(false, "expected RND0005 from excessive depth");
+            }
+            unreachable!();
+        }
+    };
+    let actual = render_error_to_json(
+        "tests/golden/runtime/rnd0005_excessive_depth.expected.json",
+        &err,
+    );
+    assert_render_fixture(
+        &actual,
+        "tests/golden/runtime/rnd0005_excessive_depth.expected.json",
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Coverage notes (subsystems not exercised here)
 // ---------------------------------------------------------------------------
 // The following diagnostic families are owned by subsystems that the

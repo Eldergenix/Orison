@@ -1,0 +1,17 @@
+// capsule: mobile_hello.api — typed network surface for the mobile app
+module mobile_hello.api
+
+import mobile_hello.domain
+
+// `MobileApi` is the service the mobile front-end consumes. All
+// operations are tagged with the effects they actually require, so the
+// native iOS/Android shells can be issued only the permissions they
+// truly need (network, in this case).
+
+service MobileApi uses http, net.outbound
+
+fn fetch_profile(id: UserId) -> Result[Profile, ProfileError] uses http, net.outbound
+
+fn fetch_feed(id: UserId) -> Result[List[FeedItem], ProfileError] uses http, net.outbound
+
+fn refresh_token() -> Result[Unit, ProfileError] uses http, net.outbound

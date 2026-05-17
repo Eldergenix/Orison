@@ -16,6 +16,10 @@ use ori_compiler::design_tokens::{
     check_module as check_design_tokens, report_to_diagnostics as design_tokens_diagnostics,
     TokenSet,
 };
+use ori_compiler::desktop::{
+    build_manifest as build_desktop_manifest, build_report as build_desktop_report,
+    report_json as desktop_report_json, DesktopPlatform,
+};
 use ori_compiler::docs::{generate_agent_docs, generate_human_docs};
 use ori_compiler::effect_check::build_capability_manifest;
 use ori_compiler::graphql_import::{
@@ -50,6 +54,8 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process;
+
+mod schema_check;
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -137,12 +143,14 @@ fn print_help() {
     println!("  ori docs [--format human|agent] [--budget N] [--json] [path]");
     println!("  ori migrate --from <X> --to <Y> [--dry-run] [--json] [path]");
     println!("  ori db check [--json] <file.ori>");
-    println!("  ori publish --registry <path> --tarball <file> [--json] [path]");
+    println!("  ori publish [--manifest <path>] [--registry <path|url>] [--tag <name>] [--dry-run] [--json]");
+    println!("  ori publish --registry <path> --tarball <file> [--json] [path]   # legacy");
     println!("  ori fetch --registry <path> <name>@<version> [--out <file>] [--json]");
     println!("  ori registry list --registry <path> [--json]");
-    println!("  ori registry yank --registry <path> <name>@<version> --reason <r> [--json]");
+    println!("  ori registry yank --registry <path> --package <name> --version <ver> [--reason <r>] [--json]");
     println!("  ori schema import grpc <file.proto> --module <name> [--json]");
     println!("  ori schema import graphql <file.graphql> --module <name> [--json]");
+    println!("  ori schema validate --in <envelope.json | -> [--schemas <dir>]");
     println!("  ori preprocess [--const k=v ...] [--allow-env X,Y] [--json] <file.ori>");
     println!("  ori serve --dry-run --module <file.ori>");
     println!("  ori doctor [--json]");
@@ -684,6 +692,13 @@ fn format_value(value: &Value) -> String {
                 .collect();
             format!("{{ {} }}", parts.join(", "))
         }
+        // First-class lambdas and cache handles are runtime-only values
+        // that don't have a stable surface syntax; render a tagged stub
+        // so the human view still shows *something* useful.
+        Value::Lambda { params, .. } => format!("<lambda/{}>", params.len()),
+        Value::Cache { capacity, entries } => {
+            format!("<cache len={} cap={}>", entries.len(), capacity)
+        }
     }
 }
 
@@ -708,6 +723,12 @@ fn pick_entry_name(module: &Module, requested: Option<&str>) -> String {
 }
 
 fn cmd_build(args: &[String]) -> i32 {
+    if args
+        .windows(2)
+        .any(|w| w[0] == "--target" && w[1] == "desktop")
+    {
+        return cmd_build_desktop(args);
+    }
     let mut target = "dev".to_string();
     let mut json = false;
     let mut file: Option<String> = None;
@@ -892,6 +913,87 @@ fn cmd_build(args: &[String]) -> i32 {
                 0
             }
         }
+        Err(err) => {
+            eprintln!("failed to read {file}: {err}");
+            2
+        }
+    }
+}
+
+/// Build a desktop manifest + report and print the JSON envelope.
+///
+/// Recognised flags:
+///   --platform macos|linux|windows  (required)
+///   --json                          (emit one JSON object to stdout)
+///   <file.ori>                      (positional source path)
+///
+/// Output schema: `ori.desktop_build_report.v1`.
+fn cmd_build_desktop(args: &[String]) -> i32 {
+    let mut json = false;
+    let mut file: Option<String> = None;
+    let mut platform: Option<DesktopPlatform> = None;
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--target" => {
+                let _ = iter.next();
+            }
+            "--platform" => {
+                if let Some(value) = iter.next() {
+                    match DesktopPlatform::from_cli_str(value.as_str()) {
+                        Some(p) => platform = Some(p),
+                        None => {
+                            eprintln!(
+                                "unknown --platform `{value}` (expected macos|linux|windows)"
+                            );
+                            return 2;
+                        }
+                    }
+                }
+            }
+            "--json" => json = true,
+            value if !value.starts_with("--") => file = Some(value.to_string()),
+            value => {
+                eprintln!("unknown flag `{value}`");
+                return 2;
+            }
+        }
+    }
+    let Some(file) = file else {
+        eprintln!(
+            "usage: ori build --target desktop --platform macos|linux|windows [--json] <file.ori>"
+        );
+        return 2;
+    };
+    let Some(platform) = platform else {
+        eprintln!(
+            "usage: ori build --target desktop --platform macos|linux|windows [--json] <file.ori>"
+        );
+        return 2;
+    };
+    match Compiler::check_file(&file) {
+        Ok(result) => match build_desktop_manifest(&result.module, platform) {
+            Ok(manifest) => {
+                let report = build_desktop_report(&manifest);
+                let text = desktop_report_json(&report);
+                if json {
+                    println!("{text}");
+                } else {
+                    println!(
+                        "desktop build {} [platform={}] artefacts={} warnings={}",
+                        result.module.name,
+                        platform.as_str(),
+                        report.artefacts.len(),
+                        report.warnings.len()
+                    );
+                }
+                0
+            }
+            Err(err) => {
+                eprintln!("desktop build failed: {err}");
+                1
+            }
+        },
         Err(err) => {
             eprintln!("failed to read {file}: {err}");
             2
@@ -1196,14 +1298,121 @@ fn cmd_design_check(args: &[String]) -> i32 {
 fn cmd_schema(args: &[String]) -> i32 {
     if args.is_empty() {
         eprintln!("usage: ori schema import grpc <file.proto> --module <name> [--json]");
+        eprintln!("       ori schema validate --in <envelope.json | ->");
         return 2;
     }
     match args[0].as_str() {
         "import" => cmd_schema_import(&args[1..]),
+        "validate" => cmd_schema_validate(&args[1..]),
         other => {
             eprintln!("unknown schema subcommand `{other}`");
             2
         }
+    }
+}
+
+fn cmd_schema_validate(args: &[String]) -> i32 {
+    let mut input: Option<String> = None;
+    let mut schemas_dir: Option<String> = None;
+    let mut idx = 0usize;
+    while idx < args.len() {
+        match args[idx].as_str() {
+            "--in" => {
+                let Some(value) = args.get(idx + 1) else {
+                    eprintln!("--in requires a value");
+                    return 2;
+                };
+                input = Some(value.clone());
+                idx += 2;
+            }
+            "--schemas" => {
+                let Some(value) = args.get(idx + 1) else {
+                    eprintln!("--schemas requires a value");
+                    return 2;
+                };
+                schemas_dir = Some(value.clone());
+                idx += 2;
+            }
+            "--json" => idx += 1,
+            value if value.starts_with("--") => {
+                eprintln!("unknown flag `{value}`");
+                return 2;
+            }
+            value => {
+                input = Some(value.to_string());
+                idx += 1;
+            }
+        }
+    }
+    let Some(input) = input else {
+        eprintln!("usage: ori schema validate --in <envelope.json | ->");
+        return 2;
+    };
+    let text = if input == "-" {
+        use std::io::Read;
+        let mut buf = String::new();
+        match std::io::stdin().lock().read_to_string(&mut buf) {
+            Ok(_) => buf,
+            Err(err) => {
+                eprintln!("could not read stdin: {err}");
+                return 2;
+            }
+        }
+    } else {
+        match fs::read_to_string(&input) {
+            Ok(t) => t,
+            Err(err) => {
+                eprintln!("could not read {input}: {err}");
+                return 2;
+            }
+        }
+    };
+    let envelope: serde_json::Value = match serde_json::from_str(text.trim()) {
+        Ok(v) => v,
+        Err(err) => {
+            let body = serde_json::json!({
+                "schema": "ori.schema_validation.v1",
+                "ok": false,
+                "envelope_schema": serde_json::Value::Null,
+                "errors": [{
+                    "path": "",
+                    "code": "envelope_parse_error",
+                    "detail": format!("invalid JSON: {err}"),
+                }],
+            });
+            println!("{body}");
+            return 1;
+        }
+    };
+    let dir = schemas_dir.unwrap_or_else(|| "./schemas".to_string());
+    let dir_path = PathBuf::from(&dir);
+    let envelope_schema = envelope
+        .get("schema")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let errors = schema_check::validate_envelope(&envelope, &dir_path);
+    let error_values: Vec<serde_json::Value> = errors
+        .iter()
+        .map(|e| {
+            serde_json::json!({
+                "path": e.path,
+                "code": e.code,
+                "detail": e.detail,
+            })
+        })
+        .collect();
+    let ok = errors.is_empty();
+    let body = serde_json::json!({
+        "schema": "ori.schema_validation.v1",
+        "ok": ok,
+        "envelope_schema": envelope_schema,
+        "errors": error_values,
+    });
+    println!("{body}");
+    if ok {
+        0
+    } else {
+        1
     }
 }
 
@@ -2615,7 +2824,12 @@ fn cmd_publish(args: &[String]) -> i32 {
     let mut registry: Option<String> = None;
     let mut tarball: Option<String> = None;
     let mut manifest_target: Option<String> = None;
-    let mut json = false;
+    let mut manifest_flag: Option<String> = None;
+    let mut tag: Option<String> = None;
+    // M37: JSON envelope is the default surface for the new workflow.
+    let mut json = true;
+    let mut dry_run = false;
+    let mut saw_new_flag = false;
     let mut idx = 0usize;
     while idx < args.len() {
         match args[idx].as_str() {
@@ -2635,8 +2849,35 @@ fn cmd_publish(args: &[String]) -> i32 {
                 tarball = Some(value.clone());
                 idx += 2;
             }
+            "--manifest" => {
+                let Some(value) = args.get(idx + 1) else {
+                    eprintln!("--manifest requires a value");
+                    return 2;
+                };
+                manifest_flag = Some(value.clone());
+                saw_new_flag = true;
+                idx += 2;
+            }
+            "--tag" => {
+                let Some(value) = args.get(idx + 1) else {
+                    eprintln!("--tag requires a value");
+                    return 2;
+                };
+                tag = Some(value.clone());
+                saw_new_flag = true;
+                idx += 2;
+            }
+            "--dry-run" => {
+                dry_run = true;
+                saw_new_flag = true;
+                idx += 1;
+            }
             "--json" => {
                 json = true;
+                idx += 1;
+            }
+            "--no-json" => {
+                json = false;
                 idx += 1;
             }
             value if value.starts_with("--") => {
@@ -2649,6 +2890,75 @@ fn cmd_publish(args: &[String]) -> i32 {
             }
         }
     }
+
+    if tarball.is_some() && !saw_new_flag {
+        return cmd_publish_legacy(registry, tarball, manifest_target, false);
+    }
+
+    let manifest_path_arg = manifest_flag
+        .or(manifest_target)
+        .unwrap_or_else(|| "./ori.toml".to_string());
+    let manifest_path = resolve_manifest_path(Path::new(&manifest_path_arg));
+    let registry_arg = registry.unwrap_or_else(|| "./.ori-registry".to_string());
+
+    if let Err(err) = ori_pkg::LocalRegistry::new(&registry_arg).init() {
+        eprintln!("publish failed: could not initialise registry: {err}");
+        return 2;
+    }
+
+    let req = ori_pkg::publish::PublishRequest {
+        manifest_path,
+        registry: registry_arg.clone(),
+        tag,
+    };
+    match ori_pkg::publish::publish_with_options(&req, dry_run) {
+        Ok(outcome) => {
+            if json {
+                println!("{}", ori_pkg::publish::outcome_json(&outcome));
+            } else {
+                println!(
+                    "published {}@{} status={:?}",
+                    outcome.package, outcome.version, outcome.status
+                );
+            }
+            0
+        }
+        Err(err) => {
+            let envelope = serde_json::json!({
+                "schema": ori_pkg::publish::PUBLISH_OUTCOME_SCHEMA,
+                "status": {
+                    "kind": "rejected",
+                    "code": err.code(),
+                    "reason": format!("{err}"),
+                },
+                "package": "",
+                "version": "",
+                "published_at": 0,
+                "receipt": {
+                    "manifest_hash": "0000000000000000",
+                    "source_count": 0,
+                    "bytes_estimate": 0,
+                    "signature": "fnv1a:0000000000000000",
+                },
+                "registry": registry_arg,
+                "warnings": [],
+            });
+            println!("{envelope}");
+            eprintln!("publish failed: {err}");
+            match err {
+                ori_pkg::publish::PublishError::RegistryUnreachable { .. } => 2,
+                _ => 1,
+            }
+        }
+    }
+}
+
+fn cmd_publish_legacy(
+    registry: Option<String>,
+    tarball: Option<String>,
+    manifest_target: Option<String>,
+    json: bool,
+) -> i32 {
     let Some(registry) = registry else {
         eprintln!("usage: ori publish --registry <path> --tarball <file> [--json] [path]");
         return 2;
@@ -2867,6 +3177,8 @@ fn cmd_registry_yank(args: &[String]) -> i32 {
     let mut registry: Option<String> = None;
     let mut reason: Option<String> = None;
     let mut spec: Option<String> = None;
+    let mut name_flag: Option<String> = None;
+    let mut version_flag: Option<String> = None;
     let mut json = false;
     let mut idx = 0usize;
     while idx < args.len() {
@@ -2887,6 +3199,22 @@ fn cmd_registry_yank(args: &[String]) -> i32 {
                 reason = Some(value.clone());
                 idx += 2;
             }
+            "--package" => {
+                let Some(value) = args.get(idx + 1) else {
+                    eprintln!("--package requires a value");
+                    return 2;
+                };
+                name_flag = Some(value.clone());
+                idx += 2;
+            }
+            "--version" => {
+                let Some(value) = args.get(idx + 1) else {
+                    eprintln!("--version requires a value");
+                    return 2;
+                };
+                version_flag = Some(value.clone());
+                idx += 2;
+            }
             "--json" => {
                 json = true;
                 idx += 1;
@@ -2903,39 +3231,55 @@ fn cmd_registry_yank(args: &[String]) -> i32 {
     }
     let Some(registry) = registry else {
         eprintln!(
-            "usage: ori registry yank --registry <path> <name>@<version> --reason <r> [--json]"
+            "usage: ori registry yank --registry <path> (--package <name> --version <ver> | <name>@<version>) [--reason <r>] [--json]"
         );
         return 2;
     };
-    let Some(spec) = spec else {
-        eprintln!(
-            "usage: ori registry yank --registry <path> <name>@<version> --reason <r> [--json]"
-        );
-        return 2;
+
+    let (name, version) = match (name_flag.clone(), version_flag.clone(), spec.clone()) {
+        (Some(n), Some(v), _) => (n, v),
+        (_, _, Some(s)) => {
+            let Some(parsed) = parse_name_version(&s) else {
+                eprintln!("invalid <name>@<version>: `{s}`");
+                return 2;
+            };
+            parsed
+        }
+        _ => {
+            eprintln!(
+                "usage: ori registry yank --registry <path> --package <name> --version <ver> [--reason <r>] [--json]"
+            );
+            return 2;
+        }
     };
-    let Some(reason) = reason else {
-        eprintln!(
-            "usage: ori registry yank --registry <path> <name>@<version> --reason <r> [--json]"
-        );
-        return 2;
-    };
-    let Some((name, version)) = parse_name_version(&spec) else {
-        eprintln!("invalid <name>@<version>: `{spec}`");
-        return 2;
-    };
+    let reason = reason.unwrap_or_else(|| "yanked via ori registry yank".to_string());
+
     let reg = LocalRegistry::new(&registry);
     match reg.yank(&name, &version, &reason) {
         Ok(()) => {
+            let entries: Vec<PackageEntry> = match reg.list() {
+                Ok(v) => v.into_iter().filter(|e| e.name == name).collect(),
+                Err(err) => {
+                    eprintln!("yank succeeded but list failed: {err}");
+                    return registry_exit_code(&err);
+                }
+            };
             if json {
                 let body = serde_json::json!({
-                    "schema": "ori.yank_receipt.v1",
-                    "name": name,
-                    "version": version,
-                    "reason": reason,
+                    "schema": REGISTRY_LIST_SCHEMA,
+                    "registry": registry,
+                    "packages": entries,
                 });
                 println!("{body}");
             } else {
                 println!("yanked {name}@{version}: {reason}");
+                for entry in &entries {
+                    let yank_mark = if entry.yanked { " (yanked)" } else { "" };
+                    println!(
+                        "  {}@{} {} bytes checksum={}{}",
+                        entry.name, entry.version, entry.bytes, entry.checksum, yank_mark
+                    );
+                }
             }
             0
         }

@@ -1,0 +1,28 @@
+// capsule: desktop_hello.domain — pure types for the desktop hello example
+module desktop_hello.domain
+
+// `NoteId` and `NoteBody` are newtypes so a stray `Str` can never be
+// confused with a real note identifier or with the body text. Both wrap
+// `Str` but the type system treats them as distinct, just like in the
+// rest of the Orison ecosystem.
+
+type NoteId wraps Str
+type NoteBody wraps Str
+
+type Note = {
+  id: NoteId,
+  body: NoteBody,
+  created_at_unix_seconds: Int
+}
+
+type NoteList = {
+  notes: List[Note]
+}
+
+variant NoteError =
+  | NotFound(id: NoteId)
+  | TooLong(max: Int, actual: Int)
+  | StorageFailed(reason: Str)
+
+fn empty_note_list() -> NoteList:
+  return NoteList { notes: [] }

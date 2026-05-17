@@ -9,8 +9,8 @@ use crate::cst::parse_cst;
 use crate::patch_apply::apply_patch;
 use crate::source::SourceFile;
 use crate::Compiler;
-use serde::Serialize;
-use std::collections::BTreeMap;
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
 /// Full benchmark report produced by [`run_default_suite`].
@@ -506,12 +506,358 @@ pub fn run_default_suite(samples: usize) -> BenchmarkReport {
         )],
     });
 
+    // ---------------------------------------------------------------------
+    // Wave-2/3: UI render, runtime dispatch, capability guard, model loop,
+    // parallel async scheduler, body-level borrow check.
+    // ---------------------------------------------------------------------
+    suites.push(Suite {
+        name: "ui_render_latency".to_string(),
+        metrics: vec![
+            bench_metric("ui_render_small_ns", "ns", samples, || {
+                let view = build_bench_view_small();
+                let props = build_bench_props_small();
+                let _ = crate::ui_render::render_view(&view, &props);
+            }),
+            bench_metric("ui_render_medium_ns", "ns", samples, || {
+                let view = build_bench_view_medium();
+                let props = build_bench_props_medium();
+                let _ = crate::ui_render::render_view(&view, &props);
+            }),
+        ],
+    });
+
+    suites.push(Suite {
+        name: "ui_diff_latency".to_string(),
+        metrics: vec![bench_metric("ui_diff_small_ns", "ns", samples, || {
+            let old = build_bench_node_old();
+            let new = build_bench_node_new();
+            let _ = crate::ui_render::diff_trees(&old, &new);
+        })],
+    });
+
+    suites.push(Suite {
+        name: "backend_dispatch_build_latency".to_string(),
+        metrics: vec![bench_metric(
+            "dispatch_build_medium_ns",
+            "ns",
+            samples,
+            || {
+                let source = SourceFile::new("/bench-disp.ori", DISPATCH_FIXTURE.to_string());
+                let result = Compiler::check_source(source);
+                let _ = crate::backend_dispatch::build_dispatch_table(&result.module);
+            },
+        )],
+    });
+
+    suites.push(Suite {
+        name: "backend_dispatch_call_latency".to_string(),
+        metrics: vec![bench_metric("dispatch_call_ns", "ns", samples, || {
+            // Build a fresh table + request each iteration so the metric is
+            // representative of end-to-end dispatch cost on a cold cache.
+            let source = SourceFile::new("/bench-disp-c.ori", DISPATCH_FIXTURE.to_string());
+            let result = Compiler::check_source(source);
+            let table = crate::backend_dispatch::build_dispatch_table(&result.module);
+            let req = build_bench_dispatch_request();
+            let _ = crate::backend_dispatch::dispatch(&table, &req);
+        })],
+    });
+
+    suites.push(Suite {
+        name: "capability_runtime_guard_latency".to_string(),
+        metrics: vec![bench_metric("guard_call_ns", "ns", samples, || {
+            let ctx = build_bench_guard_context();
+            let _ = crate::capability_runtime::guard_call(&ctx);
+        })],
+    });
+
+    suites.push(Suite {
+        name: "model_loop_envelope_roundtrip_latency".to_string(),
+        metrics: vec![bench_metric(
+            "model_loop_roundtrip_ns",
+            "ns",
+            samples,
+            || {
+                let envelope = build_bench_model_loop_envelope();
+                let json = model_loop_envelope_to_json(&envelope);
+                let parsed = model_loop_envelope_from_json(&json);
+                std::hint::black_box(parsed.is_ok());
+            },
+        )],
+    });
+
+    suites.push(Suite {
+        name: "async_parallel_throughput".to_string(),
+        metrics: vec![bench_metric(
+            "async_parallel_4w_100_tasks_ns",
+            "ns",
+            samples,
+            || {
+                use crate::async_runtime::Scheduler;
+                let mut sched = Scheduler::new();
+                for i in 0..100u64 {
+                    sched.spawn(crate::interp_exec::Value::Int(i as i64));
+                }
+                let report = sched.run_to_completion_parallel(4, 16);
+                std::hint::black_box(report);
+            },
+        )],
+    });
+
+    suites.push(Suite {
+        name: "borrow_body_check_latency".to_string(),
+        metrics: vec![bench_metric("borrow_body_medium_ns", "ns", samples, || {
+            let source = SourceFile::new("/bench-bborrow.ori", medium.clone());
+            let bodies = crate::body::parse_module_bodies(&source);
+            let result = Compiler::check_source(source);
+            let _ = crate::borrow::borrow_check_bodies(&result.module, &bodies);
+        })],
+    });
+
     BenchmarkReport {
         schema: "ori.benchmark.v1",
         generated_at: iso8601_now(),
         environment: detect_environment(),
         suites,
     }
+}
+
+// -------------------------------------------------------------------------
+// Wave-2/3 bench fixtures and helpers
+// -------------------------------------------------------------------------
+
+fn build_bench_view_small() -> crate::ui_render::ViewDecl {
+    use crate::ui_render::{PropSlot, PropValue, ViewDecl, ViewTemplate};
+    let body = ViewTemplate::leaf("Heading")
+        .with_prop("level", PropValue::Int(1))
+        .with_prop_binding("title");
+    ViewDecl::placeholder("BenchSmall", vec![PropSlot::required_str("title")]).with_body(body)
+}
+
+fn build_bench_props_small() -> BTreeMap<String, crate::ui_render::PropValue> {
+    let mut m: BTreeMap<String, crate::ui_render::PropValue> = BTreeMap::new();
+    m.insert(
+        "title".to_string(),
+        crate::ui_render::PropValue::Str("Hello".to_string()),
+    );
+    m
+}
+
+fn build_bench_view_medium() -> crate::ui_render::ViewDecl {
+    use crate::ui_render::{PropSlot, PropValue, ViewDecl, ViewTemplate};
+    let mut row = ViewTemplate::leaf("Row")
+        .with_prop("compact", PropValue::Bool(true))
+        .with_prop_binding("user_name");
+    for i in 0..6 {
+        row = row.with_child(
+            ViewTemplate::leaf("Cell")
+                .with_key(format!("cell-{i}"))
+                .with_prop("index", PropValue::Int(i as i64)),
+        );
+    }
+    let body = ViewTemplate::leaf("Card")
+        .with_prop_binding("user_name")
+        .with_child(
+            ViewTemplate::leaf("Heading")
+                .with_prop("level", PropValue::Int(2))
+                .with_prop_binding("user_name"),
+        )
+        .with_child(row);
+    ViewDecl::placeholder(
+        "BenchMedium",
+        vec![
+            PropSlot::required_str("user_name"),
+            PropSlot::optional("subtitle", "str"),
+        ],
+    )
+    .with_body(body)
+}
+
+fn build_bench_props_medium() -> BTreeMap<String, crate::ui_render::PropValue> {
+    let mut m: BTreeMap<String, crate::ui_render::PropValue> = BTreeMap::new();
+    m.insert(
+        "user_name".to_string(),
+        crate::ui_render::PropValue::Str("Ada".to_string()),
+    );
+    m.insert(
+        "subtitle".to_string(),
+        crate::ui_render::PropValue::Str("engineer".to_string()),
+    );
+    m
+}
+
+fn build_bench_node_old() -> crate::ui_render::ViewNode {
+    use crate::ui_render::{PropValue, ViewNode};
+    let mut props: BTreeMap<String, PropValue> = BTreeMap::new();
+    props.insert("title".to_string(), PropValue::Str("old".to_string()));
+    props.insert("count".to_string(), PropValue::Int(3));
+    let mut children: Vec<ViewNode> = Vec::new();
+    for i in 0..4 {
+        let mut child_props: BTreeMap<String, PropValue> = BTreeMap::new();
+        child_props.insert("index".to_string(), PropValue::Int(i as i64));
+        children.push(ViewNode {
+            kind: "Cell".to_string(),
+            key: Some(format!("k-{i}")),
+            props: child_props,
+            children: Vec::new(),
+        });
+    }
+    ViewNode {
+        kind: "Card".to_string(),
+        key: None,
+        props,
+        children,
+    }
+}
+
+fn build_bench_node_new() -> crate::ui_render::ViewNode {
+    // Same tree shape as `_old` but with one prop changed at the root so the
+    // diff has exactly one op to emit. This keeps the metric focused on the
+    // diff machinery itself rather than the prop-mutation cost.
+    let mut node = build_bench_node_old();
+    node.props.insert(
+        "title".to_string(),
+        crate::ui_render::PropValue::Str("new".to_string()),
+    );
+    node
+}
+
+const DISPATCH_FIXTURE: &str = "module bench.dispatch\n\
+fn get_users() -> Int uses http, db.read\n\
+fn post_users() -> Int uses http, db.write\n\
+fn get_status() -> Int uses http\n\
+fn get_orders() -> Int uses http, db.read\n";
+
+fn build_bench_dispatch_request() -> crate::backend_dispatch::Request {
+    use crate::backend_dispatch::{Principal, Request};
+    let mut caps: BTreeSet<String> = BTreeSet::new();
+    caps.insert("db.read".to_string());
+    caps.insert("db.write".to_string());
+    let mut req = Request::new("GET", "/users");
+    req.principal = Some(Principal {
+        id: "bench-principal".to_string(),
+        capabilities: caps,
+    });
+    req
+}
+
+fn build_bench_guard_context() -> crate::capability_runtime::CallContext {
+    use crate::capability_runtime::{CallContext, CapabilitySet, CapabilityToken};
+    let mut tokens: BTreeMap<String, CapabilityToken> = BTreeMap::new();
+    tokens.insert(
+        "db.read".to_string(),
+        CapabilityToken {
+            effect: "db.read".to_string(),
+            issued_to: "bench-principal".to_string(),
+            expires_at: None,
+        },
+    );
+    tokens.insert(
+        "db.write".to_string(),
+        CapabilityToken {
+            effect: "db.write".to_string(),
+            issued_to: "bench-principal".to_string(),
+            expires_at: None,
+        },
+    );
+    let mut required: BTreeSet<String> = BTreeSet::new();
+    required.insert("db.read".to_string());
+    required.insert("db.write".to_string());
+    CallContext {
+        caller_symbol: "sym:bench.handler".to_string(),
+        required_effects: required,
+        principal_id: "bench-principal".to_string(),
+        capabilities: CapabilitySet {
+            tokens,
+            denials: BTreeSet::new(),
+            audit_required: BTreeSet::new(),
+        },
+    }
+}
+
+// Local mirror of the `ori-agent` model_loop envelope shape. We mirror it
+// here so the benchmark exercises the same serde_json round-trip pattern
+// without pulling `ori-agent` into the bootstrap dependency graph (the
+// crate is only a dev-dependency of `ori-compiler`).
+const MODEL_LOOP_SCHEMA: &str = "ori.model_loop_telemetry.v1";
+
+#[derive(Serialize, Deserialize, Clone)]
+struct BenchLoopIteration {
+    iteration: u32,
+    started_at: u64,
+    completed_at: u64,
+    edits_proposed: u32,
+    edits_accepted: u32,
+    edits_rejected: u32,
+    tokens_in: u64,
+    tokens_out: u64,
+    budget_remaining: u64,
+    diagnostics_before: u32,
+    diagnostics_after: u32,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct BenchLoopTotals {
+    iterations: u32,
+    wall_ms: u64,
+    edits_proposed: u32,
+    edits_accepted: u32,
+    edits_rejected: u32,
+    tokens_in: u64,
+    tokens_out: u64,
+    diagnostics_resolved: i32,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct BenchLoopTelemetry {
+    schema: String,
+    session_id: String,
+    model_id: String,
+    iterations: Vec<BenchLoopIteration>,
+    totals: BenchLoopTotals,
+}
+
+fn build_bench_model_loop_envelope() -> BenchLoopTelemetry {
+    let mut iters: Vec<BenchLoopIteration> = Vec::with_capacity(4);
+    for i in 0..4u32 {
+        iters.push(BenchLoopIteration {
+            iteration: i,
+            started_at: 1_000 + (i as u64) * 50,
+            completed_at: 1_040 + (i as u64) * 50,
+            edits_proposed: 3,
+            edits_accepted: 2,
+            edits_rejected: 1,
+            tokens_in: 256,
+            tokens_out: 128,
+            budget_remaining: 8_000u64.saturating_sub(((i as u64) + 1) * 384),
+            diagnostics_before: 5u32.saturating_sub(i),
+            diagnostics_after: 4u32.saturating_sub(i),
+        });
+    }
+    BenchLoopTelemetry {
+        schema: MODEL_LOOP_SCHEMA.to_string(),
+        session_id: "bench-session".to_string(),
+        model_id: "bench-model".to_string(),
+        iterations: iters,
+        totals: BenchLoopTotals {
+            iterations: 4,
+            wall_ms: 160,
+            edits_proposed: 12,
+            edits_accepted: 8,
+            edits_rejected: 4,
+            tokens_in: 1024,
+            tokens_out: 512,
+            diagnostics_resolved: 4,
+        },
+    }
+}
+
+fn model_loop_envelope_to_json(env: &BenchLoopTelemetry) -> String {
+    crate::json::to_json(env)
+}
+
+fn model_loop_envelope_from_json(text: &str) -> Result<BenchLoopTelemetry, String> {
+    serde_json::from_str::<BenchLoopTelemetry>(text)
+        .map_err(|e| format!("invalid model_loop envelope: {e}"))
 }
 
 fn ori_agent_map_for_budget(result: &crate::CompileResult, budget: usize) -> String {

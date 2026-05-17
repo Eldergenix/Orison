@@ -17,7 +17,7 @@ bootstrap actually parses see [`docs/language/REFERENCE.md`](../language/REFEREN
 |-------------------|---------------------------------------------------------------|
 | Rust toolchain    | 1.92 (pinned in [`rust-toolchain.toml`](../../rust-toolchain.toml)) |
 | Python            | 3.13 for [`scripts/validate_all.py`](../../scripts/validate_all.py) |
-| `jq` (optional)   | Pretty-prints the JSON envelopes shown in every chapter        |
+| `jq`              | Required for chapters 11-14 (envelope pretty-printing and the agent-loop script). |
 | Shell             | `bash` or `zsh`; commands assume POSIX                         |
 
 You will need ~150 MB free for the `target/` directory and roughly two minutes for
@@ -37,9 +37,14 @@ the first release build. Subsequent builds are incremental.
 | 08 | [Patches and agents](./08-patches-and-agents.md)                  | ~10 minutes |
 | 09 | [Testing and benchmarks](./09-testing-and-benchmarks.md)          | ~5 minutes  |
 | 10 | [Shipping the demo storefront](./10-shipping-the-demo-storefront.md) | ~10 minutes |
+| 11 | [Building a desktop app](./11-desktop-app.md)                     | ~10 minutes |
+| 12 | [Building a mobile app](./12-mobile-app.md)                       | ~10 minutes |
+| 13 | [Publishing](./13-publishing.md)                                  | ~10 minutes |
+| 14 | [Agent in the loop](./14-agent-in-loop.md)                        | ~10 minutes |
 
-Total: ~75 minutes if you run every command verbatim. Skim-reading without running
-commands takes around 30 minutes.
+Total: ~115 minutes for chapters 01-14 if you run every command verbatim.
+Skim-reading without running commands takes around 50 minutes. Chapters 11-14
+are independent of one another: read them in any order after finishing 10.
 
 ## Conventions
 

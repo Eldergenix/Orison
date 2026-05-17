@@ -1,0 +1,5 @@
+// Triggers E0221: `!` applied to an Int.
+module diag.e0221_unop_mismatch
+fn f() -> Bool:
+  let x = !5
+  return x

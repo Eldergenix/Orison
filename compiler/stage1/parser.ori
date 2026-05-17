@@ -1,0 +1,92 @@
+// capsule: compiler.stage1.parser — Orison-in-Orison module-declaration parser.
+//
+// This is the Stage 1 self-hosting prototype described in
+// docs/compiler/SELF_HOSTING.md. It parses the *headers* of an Orison
+// source file — the `module` declaration, the `uses`/`import` clauses,
+// and the top-level `fn` / `type` / `service` / `view` item names — and
+// returns a `ModuleDecl` value or a `ParseError`. Bodies are out of
+// scope at Stage 1; an item header records its name, kind, and signature
+// only. The Rust bootstrap in `crates/ori-compiler/src/parser.rs` remains
+// authoritative until Stage 2 lambda/list/string runtime primitives land
+// (see SELF_HOSTING.md §3 prerequisites).
+//
+// The Rust bootstrap parses this file successfully today. Its body
+// expressions still return placeholder values because the bootstrap
+// interpreter cannot yet execute the inner lambdas that a real lexer
+// would need (M27-deferred). The shape and exported symbols of this
+// module are nonetheless asserted by
+// `crates/ori-compiler/tests/stage1_parity.rs`.
+
+module compiler.stage1.parser
+
+import core.result
+import core.option
+import core.list
+import core.string
+
+// One top-level item header recognised by the Stage 1 parser. Only the
+// declaration line is captured — bodies, attributes and effect clauses
+// beyond the header `uses` list are deferred to Stage 2.
+type ItemDecl =
+  | Function(name: String, signature: String)
+  | Type(name: String, signature: String)
+  | Service(name: String, signature: String)
+  | View(name: String, signature: String)
+
+// Parsed surface of one source file. Mirrors the Rust bootstrap
+// `ast::Module` shape: name, ordered import list, and ordered item list.
+// Ordering is preserved from source so two runs over the same input
+// produce byte-identical structured output (determinism gate, §5.4 of
+// SELF_HOSTING.md).
+type ModuleDecl = {
+  name: String,
+  imports: List[String],
+  items: List[ItemDecl]
+}
+
+// Structured failure surface. `MissingModule` is raised when the source
+// has no `module` declaration; `InvalidIdent` when an identifier slot
+// fails the simple `[A-Za-z_][A-Za-z0-9_]*` rule; `UnexpectedEof` when
+// the parser walks off the end of the token stream mid-declaration.
+type ParseError =
+  | MissingModule
+  | InvalidIdent(at: Int, lexeme: String)
+  | UnexpectedEof(at: Int)
+
+// Sentinel value used to seed empty `ModuleDecl` accumulators in branches
+// the bootstrap interpreter cannot yet execute. Stage 2 will replace this
+// with a real accumulator built by walking the token stream.
+fn empty_module(name: String) -> ModuleDecl:
+  return { name: name, imports: List.empty(), items: List.empty() }
+
+// Top-level entry point. Scans the leading `module X.Y` declaration, the
+// `import` and `uses` clauses on subsequent lines, and the top-level
+// `fn` / `type` / `service` / `view` item headers, returning a
+// `ModuleDecl` on success or a `ParseError` describing the first failure.
+//
+// Bodies are intentionally not parsed: at Stage 1 we are validating that
+// Orison can describe its own surface syntax, not that it can execute the
+// parser. The Rust bootstrap remains the executable parser until M27
+// runtime primitives unblock the interpreter (see SELF_HOSTING.md §3.2).
+fn parse_module(source: String) -> Result[ModuleDecl, ParseError]:
+  return Err(MissingModule)
+
+// Parse a single dotted module path (`a.b.c`) starting at `cursor`.
+// Returns the parsed name and the new cursor. Stage 1 stub: returns the
+// empty string and the unmoved cursor.
+fn parse_dotted_name(source: String, cursor: Int) -> Result[String, ParseError]:
+  return Err(UnexpectedEof(at: cursor))
+
+// Recognise one item header (`fn name(...)`, `type Name = ...`,
+// `service Name uses ...`, `view Name(...) uses ...`) on the current
+// line. Stage 1 stub: yields `None` so the outer loop terminates.
+fn parse_item_header(source: String, cursor: Int) -> Option[ItemDecl]:
+  return None
+
+// True when `ch` may start an identifier (`[A-Za-z_]`). Stage 1 stub.
+fn is_ident_start(ch: String) -> Bool:
+  return false
+
+// True when `ch` may continue an identifier (`[A-Za-z0-9_]`).
+fn is_ident_continue(ch: String) -> Bool:
+  return false

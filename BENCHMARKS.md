@@ -10,7 +10,7 @@ matches that schema. Raw measurements live in `BENCHMARKS.results.json`.
 
 ---
 
-## 1. TL;DR (Apple Silicon, n=100, 40 metrics across 32 suites)
+## 1. TL;DR (Apple Silicon, n=100, 49 metrics across 40+ suites)
 
 Most recent run on `aarch64-apple-darwin`, `rustc 1.92`, release build:
 
@@ -98,6 +98,32 @@ Most recent run on `aarch64-apple-darwin`, `rustc 1.92`, release build:
 |---------------------------------------|----------:|----------:|----------:|
 | `incremental_cache_latency`           | ~41.4 µs  | ~23.7 µs  | ~108.4 µs |
 | `query_fingerprint_latency`           | ~38.8 µs  | ~21.3 µs  | ~108.1 µs |
+
+### Wave-2/3 runtime surfaces (UI render, dispatch, capabilities, model loop, parallel async, body borrow)
+
+| Suite                                       | metric                              |
+|---------------------------------------------|-------------------------------------|
+| `ui_render_latency`                         | `ui_render_small_ns`, `ui_render_medium_ns` |
+| `ui_diff_latency`                           | `ui_diff_small_ns`                  |
+| `backend_dispatch_build_latency`            | `dispatch_build_medium_ns`          |
+| `backend_dispatch_call_latency`             | `dispatch_call_ns`                  |
+| `capability_runtime_guard_latency`          | `guard_call_ns`                     |
+| `model_loop_envelope_roundtrip_latency`     | `model_loop_roundtrip_ns`           |
+| `async_parallel_throughput`                 | `async_parallel_4w_100_tasks_ns`    |
+| `borrow_body_check_latency`                 | `borrow_body_medium_ns`             |
+
+Raw numbers for these suites live alongside the rest in
+`BENCHMARKS.results.json`. The UI suites exercise
+`crate::ui_render::{render_view, diff_trees}` against synthetic
+`ViewDecl` / `ViewNode` fixtures; the dispatch suites build a
+`crate::backend_dispatch::DispatchTable` from a four-route fixture
+module and then dispatch a single authenticated `GET /users`; the
+capability-guard suite calls `crate::capability_runtime::guard_call`
+with two required effects; the model-loop suite round-trips a
+four-iteration telemetry envelope through `serde_json`; the parallel
+async suite spawns 100 tasks and drains them through
+`Scheduler::run_to_completion_parallel(4, 16)`; and the body-borrow
+suite calls `crate::borrow::borrow_check_bodies` on the medium fixture.
 
 **Headline.** Patch validation and the wasm-encoder cold path are
 sub-microsecond. Every per-symbol manifest (capability / OpenAPI / UI /
@@ -597,6 +623,7 @@ suites and `docs/ROADMAP.md` gets updated.
 | 2026-05-16 | First real measured numbers committed across the eight shipping suites. Full plan of planned suites documented. |
 | 2026-05-16 | Headline composite p50 budget (< 200 µs end-to-end for the demo storefront) set as the wedge target. |
 | 2026-05-16 | Regression policy formalised — 10% / 100% / 200% bands. |
+| 2026-05-17 | Added 8 wave-2/3 suites covering UI render + diff, runtime HTTP dispatch (build + call), capability-runtime guard, model-loop telemetry envelope round-trip, 4-worker parallel async throughput, and body-level borrow check. Suite total grew from 32 to 40; metric total from 40 to 49. |
 
 ---
 

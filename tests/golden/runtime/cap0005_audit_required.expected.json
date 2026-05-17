@@ -1,0 +1,1 @@
+{"audit":["CAP0005"],"code":"CAP0005","outcome":"allowed","reason":"","schema":"ori.capability_runtime.v1","source":"tests/golden/runtime/cap0005_audit_required.expected.json"}

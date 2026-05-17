@@ -1,0 +1,6 @@
+// Triggers B0060: `x` is moved into the closure and then used again.
+module diag.b0060_move_after_use
+fn f() -> Int:
+  let x = 1
+  let cb = fn () => x
+  x

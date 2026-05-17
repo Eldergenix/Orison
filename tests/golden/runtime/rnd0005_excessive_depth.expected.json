@@ -1,0 +1,1 @@
+{"code":"RND0005","error":{"depth":65,"id":"RND0005","max":64,"path":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},"schema":"ori.ui_render.v1","source":"tests/golden/runtime/rnd0005_excessive_depth.expected.json"}

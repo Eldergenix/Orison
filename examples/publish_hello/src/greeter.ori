@@ -1,0 +1,15 @@
+// capsule: publish_hello.greeter — a tiny library module suitable for publishing
+module publish_hello.greeter
+
+// A deliberately minimal library. `Greeting` is a newtype so callers
+// cannot pass a raw string where the API expects a constructed greeting.
+// `greet` is pure: no declared effects, so the published package's
+// capability surface is empty and the audit report is clean.
+
+type Greeting wraps Str
+
+fn greet(name: Str) -> Greeting:
+  return Greeting { value: "Hello, " }
+
+fn greet_loud(name: Str) -> Greeting:
+  return Greeting { value: "HELLO" }

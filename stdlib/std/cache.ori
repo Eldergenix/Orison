@@ -1,9 +1,10 @@
 // capsule: std.cache — typed in-process cache surface.
 //
-// Bodies remain declarations until the runtime exposes the underlying
-// LRU primitive; the type-checker still validates the shape of every
-// call-site. Eviction is bounded by `capacity` and is FIFO when
-// `Full` would otherwise occur.
+// Backed by the `cache.*` runtime builtins. Entries are stored in
+// FIFO insertion order; when `put` would push the cache past
+// `capacity` the oldest entry is silently evicted. The `Evicted` and
+// `Full` variants remain for future error-surface evolution but are
+// not currently emitted — every `put` succeeds.
 module std.cache
 
 import core.option
@@ -14,24 +15,27 @@ variant CacheError =
   | Full
   | Evicted(key: K)
 
-// Construct a cache that holds at most `capacity` entries.
-// M27-deferred: needs `cache` runtime capability.
-fn new_cache[K, V](capacity: Int) -> Cache[K, V]
+// Construct a cache that holds at most `capacity` entries. Eviction
+// is FIFO when an insert would push the cache past `capacity`.
+fn new_cache[K, V](capacity: Int) -> Cache[K, V]:
+  return cache.new(capacity)
 
-// Insert `value` under `key`. Returns `Err(Full)` when the cache is
-// saturated and eviction is disabled, or `Err(Evicted(k))` when an
-// older entry was dropped to make room.
-// M27-deferred: needs `cache` runtime capability.
-fn put[K, V](cache: Cache[K, V], key: K, value: V) -> Result[Unit, CacheError]
+// Insert `value` under `key`. Returns a fresh `Cache` handle —
+// callers should bind the result and use it for subsequent calls,
+// mirroring the persistent-value semantics used elsewhere in the
+// stdlib. Eviction is silent and FIFO.
+fn put[K, V](c: Cache[K, V], key: K, value: V) -> Cache[K, V]:
+  return cache.put(c, key, value)
 
-// Look up `key`. Returns `None` on miss.
-// M27-deferred: needs `cache` runtime capability.
-fn get[K, V](cache: Cache[K, V], key: K) -> Option[V]
+// Look up `key`. Returns `Some(value)` on hit, `None` on miss.
+fn get[K, V](c: Cache[K, V], key: K) -> Option[V]:
+  return cache.get(c, key)
 
-// Drop the entry for `key` if present. Idempotent.
-// M27-deferred: needs `cache` runtime capability.
-fn invalidate[K, V](cache: Cache[K, V], key: K) -> Unit
+// Number of live entries in the cache. O(1).
+fn len[K, V](c: Cache[K, V]) -> Int:
+  return cache.len(c)
 
-// Number of live entries in the cache.
-// M27-deferred: needs `cache` runtime capability.
-fn len[K, V](cache: Cache[K, V]) -> Int
+// Drop every entry. Returns a fresh, empty cache that retains the
+// original capacity.
+fn clear[K, V](c: Cache[K, V]) -> Cache[K, V]:
+  return cache.clear(c)

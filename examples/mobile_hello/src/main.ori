@@ -1,0 +1,14 @@
+// capsule: mobile_hello.main — mobile entry point
+module mobile_hello.main
+
+import mobile_hello.api
+import mobile_hello.ui
+
+// `boot` is the entry point invoked by the iOS / Android shell after
+// the native runtime has loaded the Wasm component the mobile build
+// produces. Its declared effects are the union of the network
+// capabilities required by `MobileApi` and the `ui` capability required
+// by `ProfileView` / `FeedView` / `SettingsView`.
+
+fn boot() -> Unit uses http, net.outbound, ui, auth:
+  return Unit

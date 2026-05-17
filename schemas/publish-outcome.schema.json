@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ori.publish_outcome.v1",
+  "title": "Orison Publish Outcome v1",
+  "description": "Envelope returned by `ori publish`. Wraps a stable PublishReceipt with workflow status (accepted, skipped, rejected), a deterministic content-addressed receipt, the registry tag (if any), and any non-fatal warnings collected during the publish run.",
+  "type": "object",
+  "required": [
+    "schema",
+    "status",
+    "package",
+    "version",
+    "published_at",
+    "receipt",
+    "registry",
+    "warnings"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.publish_outcome.v1"
+    },
+    "status": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "enum": ["accepted", "skipped", "rejected"]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "package": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "published_at": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "receipt": {
+      "type": "object",
+      "required": [
+        "manifest_hash",
+        "source_count",
+        "bytes_estimate",
+        "signature"
+      ],
+      "properties": {
+        "manifest_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$"
+        },
+        "source_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bytes_estimate": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "signature": {
+          "type": "string",
+          "pattern": "^fnv1a:[0-9a-f]{16}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "tag": {
+      "type": "string"
+    },
+    "registry": {
+      "type": "string",
+      "minLength": 1
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.publish_outcome.v1",
+      "status": {
+        "kind": "accepted"
+      },
+      "package": "app.greet",
+      "version": "0.1.0",
+      "published_at": 1747356800,
+      "receipt": {
+        "manifest_hash": "deadbeefcafebabe",
+        "source_count": 3,
+        "bytes_estimate": 4096,
+        "signature": "fnv1a:0123456789abcdef"
+      },
+      "tag": "first",
+      "registry": "./.ori-registry",
+      "warnings": []
+    }
+  ]
+}

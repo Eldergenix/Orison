@@ -30,6 +30,7 @@ pub mod const_fold;
 pub mod coverage;
 pub mod cst;
 pub mod design_tokens;
+pub mod desktop;
 pub mod diagnostic;
 pub mod docs;
 pub mod effect_check;

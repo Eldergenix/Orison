@@ -1,0 +1,25 @@
+# Desktop Hello package manifest.
+#
+# A minimal desktop reference app exercised by the tutorial in
+# `docs/tutorial/11-desktop-app.md`. The capabilities listed below match
+# the effects declared on `boot` and on the `NoteStore` service so the
+# `ori capability` and `ori audit` reports come up clean.
+
+[package]
+name = "desktop_hello"
+version = "0.1.0"
+edition = "2027.1"
+description = "Minimal desktop reference app: a single note-store service and a boot entry point."
+license = "Apache-2.0"
+
+[capabilities]
+declared = ["ui", "fs.read", "fs.write"]
+
+[dependencies]
+core = "*"
+std = "*"
+app = "*"
+
+[scripts]
+check = "ori check examples/desktop_hello/src/main.ori --json"
+build = "ori build --target desktop --app-id com.example.desktop_hello --platforms macos examples/desktop_hello/src/main.ori --json"

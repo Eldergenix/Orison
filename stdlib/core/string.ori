@@ -1,9 +1,10 @@
 // capsule: core.string — Pure string utilities operating on Str values.
 //
-// Many functions delegate to the runtime `str` capability for primitive
-// implementations (`str.len`, `str.contains`, `str.lower`, `str.upper`).
-// Bodies that the bootstrap cannot yet express are marked M27-deferred
-// and kept as declarations so callers still type-check.
+// Function bodies delegate to the runtime `str` namespace (`str.len`,
+// `str.contains`, `str.to_lower`, `str.to_upper`, `str.split`,
+// `str.join`, `str.starts_with`, `str.ends_with`). Case conversion is
+// ASCII-only in the bootstrap; a Unicode-aware fold is tracked for a
+// future milestone (see `dispatch_str_builtin` in interp_exec).
 module core.string
 
 import core.list
@@ -29,29 +30,43 @@ fn or_default(s: Str, fallback: Str) -> Str:
 fn eq(a: Str, b: Str) -> Bool:
   return a == b
 
-// Length in code units. Delegates to the runtime once `str.len` lands.
-// M27-deferred: needs `str` capability primitive in the interp.
+// Length in Unicode scalars. Delegates to the `str.len` runtime
+// primitive, which counts code points (not bytes) for parity with
+// most other languages' "length" semantics.
 fn len(s: Str) -> Int:
-  return 0
+  return str.len(s)
 
-// Lowercase form of `s`. M27-deferred: needs Unicode-aware runtime.
+// ASCII-lowercase form of `s`. The bootstrap interpreter only folds
+// ASCII letters; non-ASCII code points round-trip unchanged. A
+// Unicode-aware fold is tracked for a future milestone — see
+// `dispatch_str_builtin` in `crates/ori-compiler/src/interp_exec.rs`.
 fn to_lower(s: Str) -> Str:
-  return s
+  return str.to_lower(s)
 
-// Uppercase form of `s`. M27-deferred: needs Unicode-aware runtime.
+// ASCII-uppercase form of `s`. Same Unicode caveat as `to_lower`.
 fn to_upper(s: Str) -> Str:
-  return s
+  return str.to_upper(s)
 
-// Returns true when `needle` is a substring of `s`.
-// M27-deferred: needs runtime substring search primitive.
+// Returns true when `needle` is a substring of `s`. Backed by the
+// runtime `str.contains` primitive.
 fn contains(s: Str, needle: Str) -> Bool:
-  return false
+  return str.contains(s, needle)
 
-// Splits `s` on `sep`. M27-deferred: needs runtime split primitive
-// and a List[Str] constructor surface.
+// Returns true when `s` begins with `prefix`. Backed by `str.starts_with`.
+fn starts_with(s: Str, prefix: Str) -> Bool:
+  return str.starts_with(s, prefix)
+
+// Returns true when `s` ends with `suffix`. Backed by `str.ends_with`.
+fn ends_with(s: Str, suffix: Str) -> Bool:
+  return str.ends_with(s, suffix)
+
+// Splits `s` on `sep`. An empty separator returns a single-element
+// list containing `s` (defined; we avoid Rust's per-grapheme split
+// semantics on purpose).
 fn split(s: Str, sep: Str) -> List[Str]:
-  return List.empty()
+  return str.split(s, sep)
 
-// Joins `parts` with `sep`. M27-deferred: needs runtime join + iter.
+// Joins `parts` with `sep`. Element order is preserved; an empty
+// `parts` list yields the empty string.
 fn join(parts: List[Str], sep: Str) -> Str:
-  return ""
+  return str.join(parts, sep)

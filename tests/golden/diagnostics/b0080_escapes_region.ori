@@ -1,0 +1,5 @@
+// Triggers B0080: returns a borrow of a block-local binding.
+module diag.b0080_escapes_region
+fn f() -> Int:
+  let x = make()
+  return borrow(x)

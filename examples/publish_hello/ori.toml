@@ -1,0 +1,27 @@
+# Publish Hello package manifest.
+#
+# A deliberately minimal package suitable for `ori package check`,
+# `ori sbom`, `ori publish`, `ori registry list`, and `ori registry
+# yank`. Walk through the full lifecycle in
+# `docs/tutorial/13-publishing.md`.
+
+[package]
+name = "publish_hello"
+version = "0.1.0"
+edition = "2027.1"
+description = "Tiny one-module library used by the publishing tutorial."
+license = "Apache-2.0"
+
+# This module is pure — no effects — so the declared capability list
+# is empty. `ori audit` will flag any declared-but-unused capabilities.
+[capabilities]
+declared = []
+
+[dependencies]
+core = "*"
+std = "*"
+
+[scripts]
+check = "ori check examples/publish_hello/src/greeter.ori --json"
+package_check = "ori package check examples/publish_hello --json"
+sbom = "ori sbom --format ori-native examples/publish_hello --json"

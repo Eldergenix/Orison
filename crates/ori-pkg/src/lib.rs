@@ -22,6 +22,7 @@ pub mod error;
 pub mod lockfile;
 pub mod manifest;
 pub mod provenance;
+pub mod publish;
 pub mod registry;
 pub mod resolver;
 pub mod sandbox;

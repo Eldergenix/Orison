@@ -1,0 +1,1 @@
+{"audit":[],"code":"CAP0001","outcome":"denied","reason":"CAP0001: principal `alice` is missing a capability token for effect `secret.read`","schema":"ori.capability_runtime.v1","source":"tests/golden/runtime/cap0001_missing_capability.expected.json"}

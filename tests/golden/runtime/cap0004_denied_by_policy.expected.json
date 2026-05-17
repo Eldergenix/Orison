@@ -1,0 +1,1 @@
+{"audit":[],"code":"CAP0004","outcome":"denied","reason":"CAP0004: effect `net.outbound` is denied by policy for principal `alice`","schema":"ori.capability_runtime.v1","source":"tests/golden/runtime/cap0004_denied_by_policy.expected.json"}

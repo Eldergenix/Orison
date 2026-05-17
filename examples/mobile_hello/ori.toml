@@ -1,0 +1,28 @@
+# Mobile Hello package manifest.
+#
+# A minimal mobile reference app exercised by the tutorial in
+# `docs/tutorial/12-mobile-app.md`. Capabilities cover the union of
+# effects across `MobileApi` (network) and the three views (`ui`,
+# `auth`). The `ori build --target mobile` step uses this manifest to
+# derive the platform permissions list in
+# `ori.mobile_manifest.v1`.
+
+[package]
+name = "mobile_hello"
+version = "0.1.0"
+edition = "2027.1"
+description = "Minimal mobile reference app: a network service plus three typed views."
+license = "Apache-2.0"
+
+[capabilities]
+declared = ["http", "net.outbound", "ui", "auth"]
+
+[dependencies]
+core = "*"
+std = "*"
+app = "*"
+
+[scripts]
+check = "ori check examples/mobile_hello/src/main.ori --json"
+build_ios = "ori build --target mobile --ui-kind ios-swiftui --app-id com.example.mobile_hello --platforms ios examples/mobile_hello/src/ui.ori --json"
+build_android = "ori build --target mobile --ui-kind android-compose --app-id com.example.mobile_hello --platforms android examples/mobile_hello/src/ui.ori --json"

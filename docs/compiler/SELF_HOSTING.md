@@ -1482,3 +1482,79 @@ If a future maintainer disagrees with the design here, the
 correct response is a counter-RFC (`docs/rfcs/`), not a silent
 divergence. Stage 1 work should not begin until either this
 document or a superseding RFC commands consensus.
+
+---
+
+## Stage 1 prototype status
+
+The first Orison-in-Orison source under this project is now in tree
+at `compiler/stage1/`. It is intentionally tiny — the goal is to
+prove the surface syntax is rich enough to *describe* the front-end,
+not to execute it. The Rust bootstrap in `crates/ori-compiler/` is
+still the authoritative compiler.
+
+### What lives at `compiler/stage1/`
+
+- `parser.ori` — declares the `ModuleDecl` record, the `ItemDecl`
+  variant (`Function`, `Type`, `Service`, `View`), the `ParseError`
+  variant, and the top-level entry `fn parse_module(source: String)
+  -> Result[ModuleDecl, ParseError]` plus helpers
+  (`parse_dotted_name`, `parse_item_header`, `is_ident_start`,
+  `is_ident_continue`, `empty_module`).
+- `lexer.ori` — declares the `Token` variant (six constructors
+  mirroring `crates/ori-compiler/src/lexer.rs::TokenKind`), the
+  entry `fn lex(source: String) -> List[Token]`, and predicate
+  helpers (`is_keyword`, `is_ident_start`, `is_ident_continue`,
+  `is_whitespace`, `eof_at`).
+- `README.md` — operational summary of Stage 0 → 1 → 2 plus the
+  path from the current declaration-only artefact to an executable
+  Stage 2 compiler.
+
+### Surface area actually implemented
+
+Header parsing only. Every function body in `parser.ori` and
+`lexer.ori` is a placeholder (`return Err(...)`, `return None`,
+`return List.empty()`, `return false`). The Rust bootstrap parses
+both files cleanly and both `ori check --json` invocations produce
+zero diagnostics; the Orison interpreter does **not** execute the
+bodies, in line with §7's "parse-only artefact" prescription.
+
+### What blocks Stage 2
+
+The three items below are the hard prerequisites for promoting any
+stub in `compiler/stage1/` to a real implementation:
+
+1. **Lambda body execution in the interpreter.** Today's
+   `crates/ori-compiler/src/interp_exec.rs` only applies a narrow
+   set of lambda shapes; the inner scan/parse loops Stage 2 needs
+   are out of its reach until lambdas can capture and apply over
+   `List` and `String` runtime values.
+2. **List and string runtime primitives (M27-deferred).** The
+   stubs need `list.push`, `list.len`, `str.len`, `str.char_at`,
+   `str.slice` — all currently flagged "M27-deferred" in
+   `stdlib/core/list.ori` and `stdlib/core/string.ori`.
+3. **Generic type instantiation.** `Result[T, E]` and `List[T]`
+   are opaque shapes in the bootstrap type checker; Stage 2 needs
+   them to monomorphise at use sites so the produced AST matches
+   the Rust bootstrap byte-for-byte.
+
+### Parity tests
+
+The shape and determinism gates of Stage 1 are enforced by
+`crates/ori-compiler/tests/stage1_parity.rs`:
+
+- `stage1_parser_module_parses` — `compiler/stage1/parser.ori`
+  produces zero errors when fed through `Compiler::check_source`.
+- `stage1_lexer_module_parses` — same for
+  `compiler/stage1/lexer.ori`.
+- `stage1_modules_declare_expected_symbols` — the exported symbol
+  list of each module contains `ModuleDecl`, `ItemDecl`,
+  `parse_module`, `Token`, and `lex` with the right `SymbolKind`.
+- `stage1_byte_stable_across_runs` — re-parsing each Stage 1
+  source twice and serialising the resulting `Module` through
+  `json::to_json` yields byte-identical output across runs
+  (determinism gate, §5.4).
+
+These four tests run in the same CI lane as `compiler_smoke.rs`
+and are the contract Stage 1 must keep meeting until Stage 2
+supersedes them with a fixture-driven byte-equality suite.
