@@ -177,8 +177,10 @@ pub fn doctor_report_json() -> String {
         ("backend_dispatch_v2", "ori.backend_dispatch.v2"),
         ("benchmark", "ori.benchmark.v1"),
         ("build_report", "ori.build_report.v1"),
+        ("bundle_report", "ori.bundle_report.v1"),
         ("capability", "ori.capability.v1"),
         ("capability_runtime", "ori.capability_runtime.v1"),
+        ("capability_runtime_v2", "ori.capability_runtime.v2"),
         ("capsule", "ori.capsule.v1"),
         ("change", "ori.change.v1"),
         ("coverage_report", "ori.coverage_report.v1"),
@@ -193,6 +195,7 @@ pub fn doctor_report_json() -> String {
         ("manifest", "ori.manifest.v1"),
         ("migration_graph", "ori.migration_graph.v1"),
         ("migration_report", "ori.migration_report.v1"),
+        ("mobile_bundle", "ori.mobile_bundle.v1"),
         ("mobile_manifest", "ori.mobile_manifest.v1"),
         ("model_loop_telemetry", "ori.model_loop_telemetry.v1"),
         ("native_ui_manifest", "ori.native_ui_manifest.v1"),
@@ -208,9 +211,12 @@ pub fn doctor_report_json() -> String {
         ("sandbox_result", "ori.sandbox_result.v1"),
         ("sbom", "ori.sbom.v1"),
         ("symbol_card", "ori.symbol_card.v1"),
+        ("trait_report", "ori.trait_report.v1"),
         ("ui_manifest", "ori.ui_manifest.v1"),
         ("ui_render", "ori.ui_render.v1"),
         ("wasm_component", "ori.wasm_component.v1"),
+        ("wit_report", "ori.wit_report.v1"),
+        ("x64_codegen_report", "ori.x64_codegen_report.v1"),
     ] {
         versions.insert(key.to_string(), val.to_string());
     }

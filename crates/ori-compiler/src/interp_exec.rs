@@ -25,8 +25,10 @@
 
 use crate::ast::{Module, SymbolKind};
 use crate::body::ModuleBodies;
+use crate::capability_runtime::{guard_call_at, CallContext, CapabilitySet, GuardOutcome};
 use crate::expr::{Expr, Literal, MatchArm, Pattern, Stmt};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Mutex;
 
 // Conservative cap: every call_function frame in debug profile carries a
 // large Env clone plus the recursive eval_expr stack underneath, so the
@@ -34,7 +36,7 @@ use std::collections::BTreeMap;
 // is well inside the safe window on every supported toolchain (verified
 // with `cargo test` in dev/debug mode where each frame is 4-8x the size
 // of release).
-const MAX_CALL_DEPTH: usize = 64;
+pub const MAX_CALL_DEPTH: usize = 64;
 
 /// Dynamic value lattice. Kept intentionally narrow so the bootstrap
 /// interpreter has a single canonical representation for each AST shape.
@@ -156,11 +158,18 @@ impl Env {
 /// Failure mode for [`exec_program`]. The `code`/`message` pair is stable;
 /// `observed_effects` mirrors the entry function's declared capabilities so
 /// callers can still report "what the program would have done".
+///
+/// `frames` is a snapshot of the bootstrap interpreter's logical call
+/// stack at the moment the error fired, with the call site nearest the
+/// error last. Frames are formatted as `"name"` for the bootstrap (line
+/// info is not yet plumbed into the [`FunctionDef`] table). Empty for
+/// errors raised before any user function was entered.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeError {
     pub code: String,
     pub message: String,
     pub observed_effects: Vec<String>,
+    pub frames: Vec<String>,
 }
 
 impl RuntimeError {
@@ -169,11 +178,17 @@ impl RuntimeError {
             code: code.to_string(),
             message: message.into(),
             observed_effects: Vec::new(),
+            frames: Vec::new(),
         }
     }
 
     fn with_effects(mut self, effects: Vec<String>) -> Self {
         self.observed_effects = effects;
+        self
+    }
+
+    fn with_frames(mut self, frames: Vec<String>) -> Self {
+        self.frames = frames;
         self
     }
 }
@@ -190,13 +205,95 @@ enum EvalFlow {
     Err(RuntimeError),
 }
 
+/// Mutable per-run interpreter state threaded through every evaluator.
+///
+/// Holds the logical call-frame stack (so `R0001`-`R0005` emitters can
+/// attach a snapshot) plus an optional [`CapabilitySet`] used to gate
+/// callees whose signatures declare `uses <effect>` clauses. The
+/// `principal_id` and `clock_now` fields parameterise the calls made
+/// into [`crate::capability_runtime::guard_call_at`].
+///
+/// `caps == None` means "no enforcement"; legacy callers using
+/// [`exec_program`] take this path so their existing behaviour is
+/// preserved bit-for-bit. Callers wanting real enforcement should use
+/// [`exec_program_with_caps`].
+struct ExecState {
+    frames: Vec<String>,
+    caps: Option<CapabilitySet>,
+    principal_id: String,
+    clock_now: u64,
+}
+
+impl ExecState {
+    fn new(caps: Option<CapabilitySet>, principal_id: String, clock_now: u64) -> Self {
+        Self {
+            frames: Vec::new(),
+            caps,
+            principal_id,
+            clock_now,
+        }
+    }
+
+    /// Construct a [`RuntimeError`] tagged with the current frame stack.
+    fn err(&self, code: &str, message: impl Into<String>) -> RuntimeError {
+        RuntimeError::new(code, message).with_frames(self.frames.clone())
+    }
+}
+
+/// Test-only writer that captures everything `io.print_line` would
+/// normally send to `stdout`. Initialised to `None`; when `Some`, the
+/// `io.print_line` builtin appends to the buffer instead of writing to
+/// the real stdout. Lives behind a `Mutex` so test threads can install
+/// and inspect it deterministically.
+static PRINT_CAPTURE: Mutex<Option<Vec<String>>> = Mutex::new(None);
+
+#[cfg(test)]
+fn install_print_capture() {
+    if let Ok(mut guard) = PRINT_CAPTURE.lock() {
+        *guard = Some(Vec::new());
+    }
+}
+
+#[cfg(test)]
+fn take_print_capture() -> Vec<String> {
+    match PRINT_CAPTURE.lock() {
+        Ok(mut guard) => guard.take().unwrap_or_default(),
+        Err(_) => Vec::new(),
+    }
+}
+
 /// Public entry point. Builds an [`Env`] from `module`/`bodies`, resolves
-/// `entry`, and runs it with the provided `args`.
+/// `entry`, and runs it with the provided `args`. Capability enforcement
+/// is *disabled* in this entry point (see
+/// [`exec_program_with_caps`] for the gated variant).
 pub fn exec_program(
     module: &Module,
     bodies: &ModuleBodies,
     entry: &str,
     args: Vec<Value>,
+) -> Result<Value, RuntimeError> {
+    exec_program_with_caps(module, bodies, entry, args, None, "anonymous", 0)
+}
+
+/// Public entry point with optional runtime capability enforcement.
+///
+/// When `caps == Some(_)` every direct call to a function whose signature
+/// declares one or more `uses <effect>` clauses is gated by
+/// [`crate::capability_runtime::guard_call_at`]. A denial is surfaced as
+/// an [`EvalFlow::Err`] with the guard's stable `CAP####` code, so the
+/// program halts at the first ungranted effect.
+///
+/// `principal_id` is forwarded to the guard so token bindings (CAP0003)
+/// resolve correctly; `clock_now` is the Unix-seconds clock used for
+/// token expiry (CAP0002). Tests should pin both for determinism.
+pub fn exec_program_with_caps(
+    module: &Module,
+    bodies: &ModuleBodies,
+    entry: &str,
+    args: Vec<Value>,
+    caps: Option<&CapabilitySet>,
+    principal_id: &str,
+    clock_now: u64,
 ) -> Result<Value, RuntimeError> {
     let mut env = Env::new();
     for symbol in &module.symbols {
@@ -225,55 +322,65 @@ pub fn exec_program(
         .map(|s| s.effects.clone())
         .unwrap_or_default();
 
+    let mut state = ExecState::new(caps.cloned(), principal_id.to_string(), clock_now);
+
     let Some(entry_def) = env.lookup_function(entry).cloned() else {
-        return Err(RuntimeError::new(
-            "R0001",
-            format!(
-                "entry function `{entry}` not found in module `{}`",
-                module.name
-            ),
-        )
-        .with_effects(entry_effects));
+        return Err(state
+            .err(
+                "R0001",
+                format!(
+                    "entry function `{entry}` not found in module `{}`",
+                    module.name
+                ),
+            )
+            .with_effects(entry_effects));
     };
 
     if entry_def.params.len() != args.len() {
-        return Err(RuntimeError::new(
-            "R0003",
-            format!(
-                "entry `{}` expects {} argument(s), got {}",
-                entry_def.name,
-                entry_def.params.len(),
-                args.len()
-            ),
-        )
-        .with_effects(entry_effects));
+        return Err(state
+            .err(
+                "R0003",
+                format!(
+                    "entry `{}` expects {} argument(s), got {}",
+                    entry_def.name,
+                    entry_def.params.len(),
+                    args.len()
+                ),
+            )
+            .with_effects(entry_effects));
     }
 
-    match call_function(&env, &entry_def, args, 0) {
+    match call_function(&env, &entry_def, args, 0, &mut state) {
         Ok(value) => Ok(value),
         Err(err) => Err(err.with_effects(entry_effects)),
     }
 }
 
 /// Invoke a function by value. Creates a fresh child env, binds parameters,
-/// evaluates the body, and unwraps `Return` into the call's value.
+/// evaluates the body, and unwraps `Return` into the call's value. Push a
+/// `name` frame onto `state.frames` before recursing; pop it on the way
+/// out so the stack stays balanced.
 fn call_function(
     root: &Env,
     def: &FunctionDef,
     args: Vec<Value>,
     depth: usize,
+    state: &mut ExecState,
 ) -> Result<Value, RuntimeError> {
     if depth >= MAX_CALL_DEPTH {
-        return Err(RuntimeError::new(
+        state.frames.push(def.name.clone());
+        let err = state.err(
             "R0005",
             format!(
                 "call stack exceeded {MAX_CALL_DEPTH} frames while invoking `{}`",
                 def.name
             ),
-        ));
+        );
+        state.frames.pop();
+        return Err(err);
     }
     if def.params.len() != args.len() {
-        return Err(RuntimeError::new(
+        return Err(state.err(
             "R0003",
             format!(
                 "function `{}` expects {} argument(s), got {}",
@@ -287,23 +394,23 @@ fn call_function(
     for (name, value) in def.params.iter().zip(args.into_iter()) {
         call_env.bind(name.clone(), value);
     }
-    match eval_expr(&def.body, &mut call_env, depth + 1) {
+    state.frames.push(def.name.clone());
+    let result = match eval_expr(&def.body, &mut call_env, depth + 1, state) {
         EvalFlow::Value(v) | EvalFlow::Return(v) => Ok(v),
         EvalFlow::TryProp(err_payload) => Ok(Value::Err_(Box::new(err_payload))),
         EvalFlow::Err(err) => Err(err),
-    }
+    };
+    state.frames.pop();
+    result
 }
 
 /// Evaluate an arbitrary expression. The [`EvalFlow`] return type lets us
 /// propagate early `return` and `?` outcomes without losing per-frame state.
-fn eval_expr(expr: &Expr, env: &mut Env, depth: usize) -> EvalFlow {
+fn eval_expr(expr: &Expr, env: &mut Env, depth: usize, state: &mut ExecState) -> EvalFlow {
     match expr {
         Expr::Lit(lit) => EvalFlow::Value(eval_literal(lit)),
 
         Expr::Var(name) => {
-            // The bootstrap lexer doesn't carve `true`/`false` into bool
-            // literals — they reach us as bare identifiers. Honour them at
-            // lookup time so `if true: ... else: ...` works as expected.
             if name == "true" {
                 return EvalFlow::Value(Value::Bool(true));
             }
@@ -312,22 +419,22 @@ fn eval_expr(expr: &Expr, env: &mut Env, depth: usize) -> EvalFlow {
             }
             match env.lookup(name) {
                 Some(value) => EvalFlow::Value(value.clone()),
-                None => EvalFlow::Err(RuntimeError::new("R0002", format!("unknown name `{name}`"))),
+                None => EvalFlow::Err(state.err("R0002", format!("unknown name `{name}`"))),
             }
         }
 
-        Expr::Block { stmts, tail } => eval_block(stmts, tail.as_deref(), env, depth),
+        Expr::Block { stmts, tail } => eval_block(stmts, tail.as_deref(), env, depth, state),
 
         Expr::If {
             cond,
             then_branch,
             else_branch,
-        } => eval_if(cond, then_branch, else_branch.as_deref(), env, depth),
+        } => eval_if(cond, then_branch, else_branch.as_deref(), env, depth, state),
 
-        Expr::Match { scrutinee, arms } => eval_match(scrutinee, arms, env, depth),
+        Expr::Match { scrutinee, arms } => eval_match(scrutinee, arms, env, depth, state),
 
         Expr::Return(value) => match value {
-            Some(inner) => match eval_expr(inner, env, depth) {
+            Some(inner) => match eval_expr(inner, env, depth, state) {
                 EvalFlow::Value(v) => EvalFlow::Return(v),
                 EvalFlow::Return(v) => EvalFlow::Return(v),
                 other => other,
@@ -335,33 +442,30 @@ fn eval_expr(expr: &Expr, env: &mut Env, depth: usize) -> EvalFlow {
             None => EvalFlow::Return(Value::Unit),
         },
 
-        Expr::Call { callee, args } => eval_call(callee, args, env, depth),
+        Expr::Call { callee, args } => eval_call(callee, args, env, depth, state),
 
-        Expr::Construct { variant, args } => eval_construct(variant, args, env, depth),
+        Expr::Construct { variant, args } => eval_construct(variant, args, env, depth, state),
 
-        Expr::Try(inner) => match eval_expr(inner, env, depth) {
+        Expr::Try(inner) => match eval_expr(inner, env, depth, state) {
             EvalFlow::Value(Value::Ok_(v)) => EvalFlow::Value(*v),
             EvalFlow::Value(Value::Err_(v)) => EvalFlow::TryProp(*v),
-            EvalFlow::Value(other) => EvalFlow::Err(RuntimeError::new(
+            EvalFlow::Value(other) => EvalFlow::Err(state.err(
                 "R0004",
                 format!("`?` requires Ok/Err, got {}", other.type_tag()),
             )),
             other => other,
         },
 
-        Expr::Field { base, name } => eval_field(base, name, env, depth),
+        Expr::Field { base, name } => eval_field(base, name, env, depth, state),
 
-        Expr::Tuple(_) => EvalFlow::Err(RuntimeError::new(
+        Expr::Tuple(_) => EvalFlow::Err(state.err(
             "R0004",
             "tuple literals are not supported in the bootstrap interpreter",
         )),
 
-        Expr::Record { fields } => eval_record(fields, env, depth),
+        Expr::Record { fields } => eval_record(fields, env, depth, state),
 
         Expr::Lambda { params, body } => {
-            // Lambdas evaluate to a `Value::Lambda` immediately. They do
-            // not capture the surrounding env; callers must pass any
-            // required bindings explicitly via parameters.
             let names: Vec<String> = params.iter().map(|(n, _)| n.clone()).collect();
             EvalFlow::Value(Value::Lambda {
                 params: names,
@@ -369,28 +473,22 @@ fn eval_expr(expr: &Expr, env: &mut Env, depth: usize) -> EvalFlow {
             })
         }
 
-        // Extended string literals (M21b) are not yet evaluated. We
-        // surface a structured runtime error so callers can distinguish
-        // "parser saw it" from "interpreter ran it".
-        Expr::InterpString { .. } => EvalFlow::Err(RuntimeError::new(
+        Expr::InterpString { .. } => EvalFlow::Err(state.err(
             "R0004",
             "interpolated string literals are not supported in the bootstrap interpreter",
         )),
         Expr::RawStr { text, .. } => EvalFlow::Value(Value::Str(text.clone())),
 
-        Expr::Error => EvalFlow::Err(RuntimeError::new(
+        Expr::Error => EvalFlow::Err(state.err(
             "R0004",
             "encountered Expr::Error recovery node during execution",
         )),
 
-        // Operator forms (M21a) parse but are not yet executable in the
-        // bootstrap interpreter; surface a structured runtime error so the
-        // contract surface stays panic-free.
-        Expr::Binary { .. } => EvalFlow::Err(RuntimeError::new(
+        Expr::Binary { .. } => EvalFlow::Err(state.err(
             "R0004",
             "binary operators are not supported in the bootstrap interpreter",
         )),
-        Expr::Unary { .. } => EvalFlow::Err(RuntimeError::new(
+        Expr::Unary { .. } => EvalFlow::Err(state.err(
             "R0004",
             "unary operators are not supported in the bootstrap interpreter",
         )),
@@ -407,23 +505,29 @@ fn eval_literal(lit: &Literal) -> Value {
     }
 }
 
-fn eval_block(stmts: &[Stmt], tail: Option<&Expr>, env: &mut Env, depth: usize) -> EvalFlow {
+fn eval_block(
+    stmts: &[Stmt],
+    tail: Option<&Expr>,
+    env: &mut Env,
+    depth: usize,
+    state: &mut ExecState,
+) -> EvalFlow {
     for stmt in stmts {
         match stmt {
             Stmt::Let { name, init, .. } => {
-                let value = match eval_expr(init, env, depth) {
+                let value = match eval_expr(init, env, depth, state) {
                     EvalFlow::Value(v) => v,
                     other => return other,
                 };
                 env.bind(name.clone(), value);
             }
-            Stmt::Expr(expr) => match eval_expr(expr, env, depth) {
+            Stmt::Expr(expr) => match eval_expr(expr, env, depth, state) {
                 EvalFlow::Value(_) => {}
                 other => return other,
             },
             Stmt::Return(value) => {
                 let result = match value {
-                    Some(expr) => match eval_expr(expr, env, depth) {
+                    Some(expr) => match eval_expr(expr, env, depth, state) {
                         EvalFlow::Value(v) => v,
                         EvalFlow::Return(v) => v,
                         other => return other,
@@ -435,7 +539,7 @@ fn eval_block(stmts: &[Stmt], tail: Option<&Expr>, env: &mut Env, depth: usize) 
         }
     }
     match tail {
-        Some(expr) => eval_expr(expr, env, depth),
+        Some(expr) => eval_expr(expr, env, depth, state),
         None => EvalFlow::Value(Value::Unit),
     }
 }
@@ -446,26 +550,33 @@ fn eval_if(
     else_branch: Option<&Expr>,
     env: &mut Env,
     depth: usize,
+    state: &mut ExecState,
 ) -> EvalFlow {
-    let cond_value = match eval_expr(cond, env, depth) {
+    let cond_value = match eval_expr(cond, env, depth, state) {
         EvalFlow::Value(v) => v,
         other => return other,
     };
     match cond_value {
-        Value::Bool(true) => eval_expr(then_branch, env, depth),
+        Value::Bool(true) => eval_expr(then_branch, env, depth, state),
         Value::Bool(false) => match else_branch {
-            Some(branch) => eval_expr(branch, env, depth),
+            Some(branch) => eval_expr(branch, env, depth, state),
             None => EvalFlow::Value(Value::Unit),
         },
-        other => EvalFlow::Err(RuntimeError::new(
+        other => EvalFlow::Err(state.err(
             "R0004",
             format!("`if` condition must be Bool, got {}", other.type_tag()),
         )),
     }
 }
 
-fn eval_match(scrutinee: &Expr, arms: &[MatchArm], env: &mut Env, depth: usize) -> EvalFlow {
-    let value = match eval_expr(scrutinee, env, depth) {
+fn eval_match(
+    scrutinee: &Expr,
+    arms: &[MatchArm],
+    env: &mut Env,
+    depth: usize,
+    state: &mut ExecState,
+) -> EvalFlow {
+    let value = match eval_expr(scrutinee, env, depth, state) {
         EvalFlow::Value(v) => v,
         other => return other,
     };
@@ -475,10 +586,10 @@ fn eval_match(scrutinee: &Expr, arms: &[MatchArm], env: &mut Env, depth: usize) 
             for (name, bound) in bindings {
                 arm_env.bind(name, bound);
             }
-            return eval_expr(&arm.body, &mut arm_env, depth);
+            return eval_expr(&arm.body, &mut arm_env, depth, state);
         }
     }
-    EvalFlow::Err(RuntimeError::new(
+    EvalFlow::Err(state.err(
         "R0004",
         format!("no match arm matched value of type {}", value.type_tag()),
     ))
@@ -514,28 +625,30 @@ fn literal_eq(lit: &Literal, value: &Value) -> bool {
     }
 }
 
-fn eval_call(callee: &Expr, args: &[Expr], env: &mut Env, depth: usize) -> EvalFlow {
-    // First: check for namespaced builtins like `str.len(s)`. These
-    // parse as `Call { callee: Field { base: Var("str"), name: "len" }, args }`.
-    // We dispatch *before* evaluating the base so `str`/`list`/`cache`/`url`
-    // do not need to exist as bindings in the runtime env.
+fn eval_call(
+    callee: &Expr,
+    args: &[Expr],
+    env: &mut Env,
+    depth: usize,
+    state: &mut ExecState,
+) -> EvalFlow {
     if let Expr::Field { base, name: method } = callee {
         if let Expr::Var(ns) = base.as_ref() {
             if is_builtin_namespace(ns) {
                 let mut evaluated: Vec<Value> = Vec::with_capacity(args.len());
                 for arg in args {
-                    match eval_expr(arg, env, depth) {
+                    match eval_expr(arg, env, depth, state) {
                         EvalFlow::Value(v) => evaluated.push(v),
                         other => return other,
                     }
                 }
-                return dispatch_builtin(ns, method, evaluated, depth);
+                return dispatch_builtin(ns, method, evaluated, depth, state);
             }
         }
     }
 
     let Expr::Var(name) = callee else {
-        return EvalFlow::Err(RuntimeError::new(
+        return EvalFlow::Err(state.err(
             "R0004",
             "only direct function calls (`name(...)`) are supported",
         ));
@@ -544,15 +657,12 @@ fn eval_call(callee: &Expr, args: &[Expr], env: &mut Env, depth: usize) -> EvalF
     let def = match env.lookup_function(name) {
         Some(def) => def.clone(),
         None => {
-            return EvalFlow::Err(RuntimeError::new(
-                "R0002",
-                format!("unknown call target `{name}`"),
-            ));
+            return EvalFlow::Err(state.err("R0002", format!("unknown call target `{name}`")));
         }
     };
 
     if def.params.len() != args.len() {
-        return EvalFlow::Err(RuntimeError::new(
+        return EvalFlow::Err(state.err(
             "R0003",
             format!(
                 "function `{}` expects {} argument(s), got {}",
@@ -565,16 +675,36 @@ fn eval_call(callee: &Expr, args: &[Expr], env: &mut Env, depth: usize) -> EvalF
 
     let mut evaluated: Vec<Value> = Vec::with_capacity(args.len());
     for arg in args {
-        match eval_expr(arg, env, depth) {
+        match eval_expr(arg, env, depth, state) {
             EvalFlow::Value(v) => evaluated.push(v),
             other => return other,
         }
     }
 
-    // Functions execute against the root env so they cannot see locals
-    // from the caller. We rebuild a root view from the call site's chain.
+    // Capability guard: when enforcement is enabled and the callee declares
+    // one or more `uses <effect>` clauses, run the call through
+    // `capability_runtime::guard_call_at`. A denial halts evaluation with a
+    // structured error carrying the guard's stable `CAP####` code.
+    if let Some(caps) = state.caps.clone() {
+        if !def.effects.is_empty() {
+            let required: BTreeSet<String> = def.effects.iter().cloned().collect();
+            let ctx = CallContext {
+                caller_symbol: format!("sym:{}", def.name),
+                required_effects: required,
+                principal_id: state.principal_id.clone(),
+                capabilities: caps,
+            };
+            match guard_call_at(&ctx, state.clock_now) {
+                GuardOutcome::Allowed => {}
+                GuardOutcome::Denied { code, reason } => {
+                    return EvalFlow::Err(state.err(code, reason));
+                }
+            }
+        }
+    }
+
     let root_view = root_view(env);
-    match call_function(&root_view, &def, evaluated, depth) {
+    match call_function(&root_view, &def, evaluated, depth, state) {
         Ok(value) => EvalFlow::Value(value),
         Err(err) => EvalFlow::Err(err),
     }
@@ -604,10 +734,16 @@ fn collect_functions(env: &Env, out: &mut BTreeMap<String, FunctionDef>) {
     }
 }
 
-fn eval_construct(variant: &str, args: &[Expr], env: &mut Env, depth: usize) -> EvalFlow {
+fn eval_construct(
+    variant: &str,
+    args: &[Expr],
+    env: &mut Env,
+    depth: usize,
+    state: &mut ExecState,
+) -> EvalFlow {
     let mut evaluated: Vec<Value> = Vec::with_capacity(args.len());
     for arg in args {
-        match eval_expr(arg, env, depth) {
+        match eval_expr(arg, env, depth, state) {
             EvalFlow::Value(v) => evaluated.push(v),
             other => return other,
         }
@@ -615,21 +751,21 @@ fn eval_construct(variant: &str, args: &[Expr], env: &mut Env, depth: usize) -> 
     match variant {
         "Ok" => match evaluated.into_iter().next() {
             Some(value) => EvalFlow::Value(Value::Ok_(Box::new(value))),
-            None => EvalFlow::Err(RuntimeError::new(
+            None => EvalFlow::Err(state.err(
                 "R0003",
                 "constructor `Ok` requires exactly 1 argument, got 0",
             )),
         },
         "Err" => match evaluated.into_iter().next() {
             Some(value) => EvalFlow::Value(Value::Err_(Box::new(value))),
-            None => EvalFlow::Err(RuntimeError::new(
+            None => EvalFlow::Err(state.err(
                 "R0003",
                 "constructor `Err` requires exactly 1 argument, got 0",
             )),
         },
         "Some" => match evaluated.into_iter().next() {
             Some(value) => EvalFlow::Value(Value::Some_(Box::new(value))),
-            None => EvalFlow::Err(RuntimeError::new(
+            None => EvalFlow::Err(state.err(
                 "R0003",
                 "constructor `Some` requires exactly 1 argument, got 0",
             )),
@@ -638,20 +774,14 @@ fn eval_construct(variant: &str, args: &[Expr], env: &mut Env, depth: usize) -> 
             if evaluated.is_empty() {
                 EvalFlow::Value(Value::None_)
             } else {
-                EvalFlow::Err(RuntimeError::new(
-                    "R0003",
-                    "constructor `None` takes no arguments",
-                ))
+                EvalFlow::Err(state.err("R0003", "constructor `None` takes no arguments"))
             }
         }
         "Unit" => {
             if evaluated.is_empty() {
                 EvalFlow::Value(Value::Unit)
             } else {
-                EvalFlow::Err(RuntimeError::new(
-                    "R0003",
-                    "constructor `Unit` takes no arguments",
-                ))
+                EvalFlow::Err(state.err("R0003", "constructor `Unit` takes no arguments"))
             }
         }
         "List" => EvalFlow::Value(Value::List(evaluated)),
@@ -684,12 +814,15 @@ fn eval_construct(variant: &str, args: &[Expr], env: &mut Env, depth: usize) -> 
     }
 }
 
-/// Evaluate a record literal: walk each `(name, expr)` field, evaluate
-/// the right-hand expression, and build a deterministic `BTreeMap`.
-fn eval_record(fields: &[(String, Expr)], env: &mut Env, depth: usize) -> EvalFlow {
+fn eval_record(
+    fields: &[(String, Expr)],
+    env: &mut Env,
+    depth: usize,
+    state: &mut ExecState,
+) -> EvalFlow {
     let mut out: BTreeMap<String, Value> = BTreeMap::new();
     for (name, expr) in fields {
-        let value = match eval_expr(expr, env, depth) {
+        let value = match eval_expr(expr, env, depth, state) {
             EvalFlow::Value(v) => v,
             other => return other,
         };
@@ -698,23 +831,23 @@ fn eval_record(fields: &[(String, Expr)], env: &mut Env, depth: usize) -> EvalFl
     EvalFlow::Value(Value::Record(out))
 }
 
-/// Evaluate field access. Only `Value::Record` carries fields; everything
-/// else surfaces a structured runtime error so the namespace dispatch in
-/// `eval_call` can still intercept `str.len(...)`-style calls upstream.
-fn eval_field(base: &Expr, name: &str, env: &mut Env, depth: usize) -> EvalFlow {
-    let base_value = match eval_expr(base, env, depth) {
+fn eval_field(
+    base: &Expr,
+    name: &str,
+    env: &mut Env,
+    depth: usize,
+    state: &mut ExecState,
+) -> EvalFlow {
+    let base_value = match eval_expr(base, env, depth, state) {
         EvalFlow::Value(v) => v,
         other => return other,
     };
     match base_value {
         Value::Record(fields) => match fields.get(name) {
             Some(v) => EvalFlow::Value(v.clone()),
-            None => EvalFlow::Err(RuntimeError::new(
-                "R0004",
-                format!("record has no field `{name}`"),
-            )),
+            None => EvalFlow::Err(state.err("R0004", format!("record has no field `{name}`"))),
         },
-        other => EvalFlow::Err(RuntimeError::new(
+        other => EvalFlow::Err(state.err(
             "R0004",
             format!("field access requires Record, got {}", other.type_tag()),
         )),
@@ -766,19 +899,43 @@ fn extract_param_names(signature: &str) -> Vec<String> {
 // ---------------------------------------------------------------------------
 
 fn is_builtin_namespace(name: &str) -> bool {
-    matches!(name, "str" | "string" | "list" | "cache" | "url")
+    matches!(
+        name,
+        "str" | "string" | "list" | "cache" | "url" | "io" | "time" | "env" | "iter"
+    )
 }
 
-fn dispatch_builtin(ns: &str, method: &str, args: Vec<Value>, depth: usize) -> EvalFlow {
-    match ns {
+fn dispatch_builtin(
+    ns: &str,
+    method: &str,
+    args: Vec<Value>,
+    depth: usize,
+    state: &mut ExecState,
+) -> EvalFlow {
+    let raw = match ns {
         "str" | "string" => dispatch_str_builtin(method, args),
-        "list" => dispatch_list_builtin(method, args, depth),
+        "list" => dispatch_list_builtin(method, args, depth, state),
         "cache" => dispatch_cache_builtin(method, args),
         "url" => dispatch_url_builtin(method, args),
+        "io" => dispatch_io_builtin(method, args),
+        "time" => dispatch_time_builtin(method, args),
+        "env" => dispatch_env_builtin(method, args),
+        "iter" => dispatch_iter_builtin(method, args, depth, state),
         other => EvalFlow::Err(RuntimeError::new(
             "R0004",
             format!("unknown builtin namespace `{other}`"),
         )),
+    };
+    attach_frames(raw, state)
+}
+
+/// Attach the current frame stack to any [`EvalFlow::Err`] returned by a
+/// builtin dispatcher. Keeps the dispatchers free of `state` plumbing
+/// while preserving the stack-trace contract for callers.
+fn attach_frames(flow: EvalFlow, state: &ExecState) -> EvalFlow {
+    match flow {
+        EvalFlow::Err(err) => EvalFlow::Err(err.with_frames(state.frames.clone())),
+        other => other,
     }
 }
 
@@ -940,7 +1097,12 @@ fn dispatch_str_builtin(method: &str, args: Vec<Value>) -> EvalFlow {
     }
 }
 
-fn dispatch_list_builtin(method: &str, args: Vec<Value>, depth: usize) -> EvalFlow {
+fn dispatch_list_builtin(
+    method: &str,
+    args: Vec<Value>,
+    depth: usize,
+    state: &mut ExecState,
+) -> EvalFlow {
     match method {
         "len" => {
             if args.len() != 1 {
@@ -1021,7 +1183,7 @@ fn dispatch_list_builtin(method: &str, args: Vec<Value>, depth: usize) -> EvalFl
             for item in items {
                 let mut frame = Env::new();
                 frame.bind(params[0].clone(), item);
-                match eval_expr(&body, &mut frame, depth + 1) {
+                match eval_expr(&body, &mut frame, depth + 1, state) {
                     EvalFlow::Value(v) | EvalFlow::Return(v) => out.push(v),
                     EvalFlow::Err(e) => return EvalFlow::Err(e),
                     EvalFlow::TryProp(v) => {
@@ -1060,7 +1222,7 @@ fn dispatch_list_builtin(method: &str, args: Vec<Value>, depth: usize) -> EvalFl
             for item in items {
                 let mut frame = Env::new();
                 frame.bind(params[0].clone(), item.clone());
-                match eval_expr(&body, &mut frame, depth + 1) {
+                match eval_expr(&body, &mut frame, depth + 1, state) {
                     EvalFlow::Value(Value::Bool(true)) | EvalFlow::Return(Value::Bool(true)) => {
                         out.push(item);
                     }
@@ -1371,6 +1533,500 @@ fn extract_path(s: &str) -> String {
     match after_scheme.find('/') {
         Some(idx) => after_scheme[idx..].to_string(),
         None => String::new(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// I/O, time, env builtins
+//
+// These namespaces give bootstrap programs the minimal "talk to the
+// outside world" surface needed for end-to-end demos: file IO, the
+// wall-clock, and the process environment. Every method funnels its host
+// failure into a `Result[..., IoErr]`-shaped value so callers can pattern
+// match on the result without crashing the interpreter. The runtime never
+// pulls in extra dependencies — `std::fs`/`std::io`/`std::env`/`std::time`
+// are the only dependencies — preserving the D002 dep policy.
+// ---------------------------------------------------------------------------
+
+/// Wrap a host I/O failure into a `Value::Err_(Record { kind, message })`.
+/// `kind` is a stable short string (NotFound / PermissionDenied / Other)
+/// so consumers can branch on it without scraping the message text.
+fn io_err_value(err: &std::io::Error) -> Value {
+    let kind = match err.kind() {
+        std::io::ErrorKind::NotFound => "NotFound",
+        std::io::ErrorKind::PermissionDenied => "PermissionDenied",
+        std::io::ErrorKind::AlreadyExists => "AlreadyExists",
+        std::io::ErrorKind::InvalidInput => "InvalidInput",
+        std::io::ErrorKind::InvalidData => "InvalidData",
+        std::io::ErrorKind::UnexpectedEof => "UnexpectedEof",
+        _ => "Other",
+    };
+    let mut rec = BTreeMap::new();
+    rec.insert("kind".to_string(), Value::Str(kind.to_string()));
+    rec.insert("message".to_string(), Value::Str(format!("{err}")));
+    Value::Err_(Box::new(Value::Record(rec)))
+}
+
+fn dispatch_io_builtin(method: &str, args: Vec<Value>) -> EvalFlow {
+    match method {
+        "read_file" => {
+            if args.len() != 1 {
+                return builtin_arity_err("io", "read_file", 1, args.len());
+            }
+            match &args[0] {
+                Value::Str(path) => match std::fs::read_to_string(path) {
+                    Ok(contents) => EvalFlow::Value(Value::Ok_(Box::new(Value::Str(contents)))),
+                    Err(err) => EvalFlow::Value(io_err_value(&err)),
+                },
+                other => builtin_type_err("io", "read_file", "Str", other.type_tag()),
+            }
+        }
+        "write_file" => {
+            if args.len() != 2 {
+                return builtin_arity_err("io", "write_file", 2, args.len());
+            }
+            match (&args[0], &args[1]) {
+                (Value::Str(path), Value::Str(contents)) => match std::fs::write(path, contents) {
+                    Ok(()) => EvalFlow::Value(Value::Ok_(Box::new(Value::Unit))),
+                    Err(err) => EvalFlow::Value(io_err_value(&err)),
+                },
+                (a, b) => builtin_type_err(
+                    "io",
+                    "write_file",
+                    "(Str, Str)",
+                    &format!("({}, {})", a.type_tag(), b.type_tag()),
+                ),
+            }
+        }
+        "print_line" => {
+            if args.len() != 1 {
+                return builtin_arity_err("io", "print_line", 1, args.len());
+            }
+            let line = match &args[0] {
+                Value::Str(s) => s.clone(),
+                other => format!("{other:?}"),
+            };
+            match PRINT_CAPTURE.lock() {
+                Ok(mut guard) => match guard.as_mut() {
+                    Some(buf) => buf.push(line),
+                    None => {
+                        println!("{line}");
+                    }
+                },
+                Err(_) => {
+                    println!("{line}");
+                }
+            }
+            EvalFlow::Value(Value::Unit)
+        }
+        "read_stdin" => {
+            if !args.is_empty() {
+                return builtin_arity_err("io", "read_stdin", 0, args.len());
+            }
+            use std::io::Read;
+            let mut buf = String::new();
+            match std::io::stdin().lock().read_to_string(&mut buf) {
+                Ok(_) => EvalFlow::Value(Value::Ok_(Box::new(Value::Str(buf)))),
+                Err(err) => EvalFlow::Value(io_err_value(&err)),
+            }
+        }
+        other => EvalFlow::Err(RuntimeError::new(
+            "R0002",
+            format!("unknown io builtin `io.{other}`"),
+        )),
+    }
+}
+
+fn dispatch_time_builtin(method: &str, args: Vec<Value>) -> EvalFlow {
+    match method {
+        "now_unix" => {
+            if !args.is_empty() {
+                return builtin_arity_err("time", "now_unix", 0, args.len());
+            }
+            let secs = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+                Ok(d) => d.as_secs(),
+                Err(_) => 0,
+            };
+            let i = if secs > i64::MAX as u64 {
+                i64::MAX
+            } else {
+                secs as i64
+            };
+            EvalFlow::Value(Value::Int(i))
+        }
+        other => EvalFlow::Err(RuntimeError::new(
+            "R0002",
+            format!("unknown time builtin `time.{other}`"),
+        )),
+    }
+}
+
+fn dispatch_env_builtin(method: &str, args: Vec<Value>) -> EvalFlow {
+    match method {
+        "get" => {
+            if args.len() != 1 {
+                return builtin_arity_err("env", "get", 1, args.len());
+            }
+            match &args[0] {
+                Value::Str(key) => match std::env::var(key) {
+                    Ok(value) => EvalFlow::Value(Value::Some_(Box::new(Value::Str(value)))),
+                    Err(_) => EvalFlow::Value(Value::None_),
+                },
+                other => builtin_type_err("env", "get", "Str", other.type_tag()),
+            }
+        }
+        other => EvalFlow::Err(RuntimeError::new(
+            "R0002",
+            format!("unknown env builtin `env.{other}`"),
+        )),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// iter.* combinators
+//
+// The bootstrap models `Iter[T]` as a `List[T]` so the runtime can land
+// the surface ahead of a lazy-iterator IR. Each combinator validates its
+// argument shapes, then walks the underlying `Vec<Value>` and (optionally)
+// evaluates a user lambda. Lambdas evaluate against a fresh frame so they
+// observe no caller-local bindings — matching the contract `list.map`
+// already established.
+// ---------------------------------------------------------------------------
+
+fn iter_apply_lambda(
+    lambda: Value,
+    args: Vec<Value>,
+    depth: usize,
+    state: &mut ExecState,
+    ns: &str,
+    method: &str,
+) -> Result<Value, EvalFlow> {
+    let (params, body) = match lambda {
+        Value::Lambda { params, body } => (params, body),
+        other => return Err(builtin_type_err(ns, method, "Lambda", other.type_tag())),
+    };
+    if params.len() != args.len() {
+        return Err(EvalFlow::Err(RuntimeError::new(
+            "R0003",
+            format!(
+                "iter.{method} lambda expects {} arg(s), got {}",
+                args.len(),
+                params.len()
+            ),
+        )));
+    }
+    let mut frame = Env::new();
+    for (name, value) in params.into_iter().zip(args.into_iter()) {
+        frame.bind(name, value);
+    }
+    match eval_expr(&body, &mut frame, depth + 1, state) {
+        EvalFlow::Value(v) | EvalFlow::Return(v) => Ok(v),
+        EvalFlow::Err(e) => Err(EvalFlow::Err(e)),
+        EvalFlow::TryProp(v) => Err(EvalFlow::Value(Value::Err_(Box::new(v)))),
+    }
+}
+
+fn dispatch_iter_builtin(
+    method: &str,
+    args: Vec<Value>,
+    depth: usize,
+    state: &mut ExecState,
+) -> EvalFlow {
+    match method {
+        "zip" => {
+            if args.len() != 2 {
+                return builtin_arity_err("iter", "zip", 2, args.len());
+            }
+            let mut it = args.into_iter();
+            let a = match it.next() {
+                Some(Value::List(v)) => v,
+                Some(other) => return builtin_type_err("iter", "zip", "List", other.type_tag()),
+                None => return builtin_arity_err("iter", "zip", 2, 0),
+            };
+            let b = match it.next() {
+                Some(Value::List(v)) => v,
+                Some(other) => return builtin_type_err("iter", "zip", "List", other.type_tag()),
+                None => return builtin_arity_err("iter", "zip", 2, 1),
+            };
+            let n = a.len().min(b.len());
+            let mut out: Vec<Value> = Vec::with_capacity(n);
+            for (x, y) in a.into_iter().take(n).zip(b.into_iter().take(n)) {
+                // Pair encoded as a 2-element list so the bootstrap
+                // doesn't depend on tuples (not yet runtime-supported).
+                out.push(Value::List(vec![x, y]));
+            }
+            EvalFlow::Value(Value::List(out))
+        }
+        "enumerate" => {
+            if args.len() != 1 {
+                return builtin_arity_err("iter", "enumerate", 1, args.len());
+            }
+            let mut it = args.into_iter();
+            let xs = match it.next() {
+                Some(Value::List(v)) => v,
+                Some(other) => {
+                    return builtin_type_err("iter", "enumerate", "List", other.type_tag())
+                }
+                None => return builtin_arity_err("iter", "enumerate", 1, 0),
+            };
+            let mut out: Vec<Value> = Vec::with_capacity(xs.len());
+            for (idx, value) in xs.into_iter().enumerate() {
+                out.push(Value::List(vec![Value::Int(idx as i64), value]));
+            }
+            EvalFlow::Value(Value::List(out))
+        }
+        "take" => {
+            if args.len() != 2 {
+                return builtin_arity_err("iter", "take", 2, args.len());
+            }
+            let mut it = args.into_iter();
+            let xs = match it.next() {
+                Some(Value::List(v)) => v,
+                Some(other) => return builtin_type_err("iter", "take", "List", other.type_tag()),
+                None => return builtin_arity_err("iter", "take", 2, 0),
+            };
+            let n = match it.next() {
+                Some(Value::Int(n)) if n >= 0 => n as usize,
+                Some(Value::Int(_)) => {
+                    return EvalFlow::Err(RuntimeError::new(
+                        "R0004",
+                        "iter.take count must be non-negative",
+                    ));
+                }
+                Some(other) => return builtin_type_err("iter", "take", "Int", other.type_tag()),
+                None => return builtin_arity_err("iter", "take", 2, 1),
+            };
+            let out: Vec<Value> = xs.into_iter().take(n).collect();
+            EvalFlow::Value(Value::List(out))
+        }
+        "skip" => {
+            if args.len() != 2 {
+                return builtin_arity_err("iter", "skip", 2, args.len());
+            }
+            let mut it = args.into_iter();
+            let xs = match it.next() {
+                Some(Value::List(v)) => v,
+                Some(other) => return builtin_type_err("iter", "skip", "List", other.type_tag()),
+                None => return builtin_arity_err("iter", "skip", 2, 0),
+            };
+            let n = match it.next() {
+                Some(Value::Int(n)) if n >= 0 => n as usize,
+                Some(Value::Int(_)) => {
+                    return EvalFlow::Err(RuntimeError::new(
+                        "R0004",
+                        "iter.skip count must be non-negative",
+                    ));
+                }
+                Some(other) => return builtin_type_err("iter", "skip", "Int", other.type_tag()),
+                None => return builtin_arity_err("iter", "skip", 2, 1),
+            };
+            let out: Vec<Value> = xs.into_iter().skip(n).collect();
+            EvalFlow::Value(Value::List(out))
+        }
+        "fold" => {
+            if args.len() != 3 {
+                return builtin_arity_err("iter", "fold", 3, args.len());
+            }
+            let mut it = args.into_iter();
+            let xs = match it.next() {
+                Some(Value::List(v)) => v,
+                Some(other) => return builtin_type_err("iter", "fold", "List", other.type_tag()),
+                None => return builtin_arity_err("iter", "fold", 3, 0),
+            };
+            let init = match it.next() {
+                Some(v) => v,
+                None => return builtin_arity_err("iter", "fold", 3, 1),
+            };
+            let f = match it.next() {
+                Some(v) => v,
+                None => return builtin_arity_err("iter", "fold", 3, 2),
+            };
+            let (params, body) = match f {
+                Value::Lambda { params, body } => (params, body),
+                other => return builtin_type_err("iter", "fold", "Lambda", other.type_tag()),
+            };
+            if params.len() != 2 {
+                return EvalFlow::Err(RuntimeError::new(
+                    "R0003",
+                    format!("iter.fold expects a 2-arg lambda, got {}-arg", params.len()),
+                ));
+            }
+            let mut acc = init;
+            for item in xs {
+                let mut frame = Env::new();
+                frame.bind(params[0].clone(), acc);
+                frame.bind(params[1].clone(), item);
+                acc = match eval_expr(&body, &mut frame, depth + 1, state) {
+                    EvalFlow::Value(v) | EvalFlow::Return(v) => v,
+                    EvalFlow::Err(e) => return EvalFlow::Err(e),
+                    EvalFlow::TryProp(v) => {
+                        return EvalFlow::Value(Value::Err_(Box::new(v)));
+                    }
+                };
+            }
+            EvalFlow::Value(acc)
+        }
+        "reduce" => {
+            if args.len() != 2 {
+                return builtin_arity_err("iter", "reduce", 2, args.len());
+            }
+            let mut it = args.into_iter();
+            let xs = match it.next() {
+                Some(Value::List(v)) => v,
+                Some(other) => return builtin_type_err("iter", "reduce", "List", other.type_tag()),
+                None => return builtin_arity_err("iter", "reduce", 2, 0),
+            };
+            let f = match it.next() {
+                Some(v) => v,
+                None => return builtin_arity_err("iter", "reduce", 2, 1),
+            };
+            let (params, body) = match f {
+                Value::Lambda { params, body } => (params, body),
+                other => return builtin_type_err("iter", "reduce", "Lambda", other.type_tag()),
+            };
+            if params.len() != 2 {
+                return EvalFlow::Err(RuntimeError::new(
+                    "R0003",
+                    format!(
+                        "iter.reduce expects a 2-arg lambda, got {}-arg",
+                        params.len()
+                    ),
+                ));
+            }
+            let mut iter_items = xs.into_iter();
+            let mut acc = match iter_items.next() {
+                Some(v) => v,
+                None => return EvalFlow::Value(Value::None_),
+            };
+            for item in iter_items {
+                let mut frame = Env::new();
+                frame.bind(params[0].clone(), acc);
+                frame.bind(params[1].clone(), item);
+                acc = match eval_expr(&body, &mut frame, depth + 1, state) {
+                    EvalFlow::Value(v) | EvalFlow::Return(v) => v,
+                    EvalFlow::Err(e) => return EvalFlow::Err(e),
+                    EvalFlow::TryProp(v) => {
+                        return EvalFlow::Value(Value::Err_(Box::new(v)));
+                    }
+                };
+            }
+            EvalFlow::Value(Value::Some_(Box::new(acc)))
+        }
+        "all" => {
+            if args.len() != 2 {
+                return builtin_arity_err("iter", "all", 2, args.len());
+            }
+            let mut it = args.into_iter();
+            let xs = match it.next() {
+                Some(Value::List(v)) => v,
+                Some(other) => return builtin_type_err("iter", "all", "List", other.type_tag()),
+                None => return builtin_arity_err("iter", "all", 2, 0),
+            };
+            let lambda = match it.next() {
+                Some(v) => v,
+                None => return builtin_arity_err("iter", "all", 2, 1),
+            };
+            for item in xs {
+                match iter_apply_lambda(lambda.clone(), vec![item], depth, state, "iter", "all") {
+                    Ok(Value::Bool(true)) => continue,
+                    Ok(Value::Bool(false)) => return EvalFlow::Value(Value::Bool(false)),
+                    Ok(other) => {
+                        return builtin_type_err(
+                            "iter",
+                            "all",
+                            "Bool from predicate",
+                            other.type_tag(),
+                        );
+                    }
+                    Err(flow) => return flow,
+                }
+            }
+            EvalFlow::Value(Value::Bool(true))
+        }
+        "any" => {
+            if args.len() != 2 {
+                return builtin_arity_err("iter", "any", 2, args.len());
+            }
+            let mut it = args.into_iter();
+            let xs = match it.next() {
+                Some(Value::List(v)) => v,
+                Some(other) => return builtin_type_err("iter", "any", "List", other.type_tag()),
+                None => return builtin_arity_err("iter", "any", 2, 0),
+            };
+            let lambda = match it.next() {
+                Some(v) => v,
+                None => return builtin_arity_err("iter", "any", 2, 1),
+            };
+            for item in xs {
+                match iter_apply_lambda(lambda.clone(), vec![item], depth, state, "iter", "any") {
+                    Ok(Value::Bool(false)) => continue,
+                    Ok(Value::Bool(true)) => return EvalFlow::Value(Value::Bool(true)),
+                    Ok(other) => {
+                        return builtin_type_err(
+                            "iter",
+                            "any",
+                            "Bool from predicate",
+                            other.type_tag(),
+                        );
+                    }
+                    Err(flow) => return flow,
+                }
+            }
+            EvalFlow::Value(Value::Bool(false))
+        }
+        "find" => {
+            if args.len() != 2 {
+                return builtin_arity_err("iter", "find", 2, args.len());
+            }
+            let mut it = args.into_iter();
+            let xs = match it.next() {
+                Some(Value::List(v)) => v,
+                Some(other) => return builtin_type_err("iter", "find", "List", other.type_tag()),
+                None => return builtin_arity_err("iter", "find", 2, 0),
+            };
+            let lambda = match it.next() {
+                Some(v) => v,
+                None => return builtin_arity_err("iter", "find", 2, 1),
+            };
+            for item in xs {
+                match iter_apply_lambda(
+                    lambda.clone(),
+                    vec![item.clone()],
+                    depth,
+                    state,
+                    "iter",
+                    "find",
+                ) {
+                    Ok(Value::Bool(true)) => {
+                        return EvalFlow::Value(Value::Some_(Box::new(item)));
+                    }
+                    Ok(Value::Bool(false)) => continue,
+                    Ok(other) => {
+                        return builtin_type_err(
+                            "iter",
+                            "find",
+                            "Bool from predicate",
+                            other.type_tag(),
+                        );
+                    }
+                    Err(flow) => return flow,
+                }
+            }
+            EvalFlow::Value(Value::None_)
+        }
+        "count" => {
+            if args.len() != 1 {
+                return builtin_arity_err("iter", "count", 1, args.len());
+            }
+            match &args[0] {
+                Value::List(items) => EvalFlow::Value(Value::Int(items.len() as i64)),
+                other => builtin_type_err("iter", "count", "List", other.type_tag()),
+            }
+        }
+        other => EvalFlow::Err(RuntimeError::new(
+            "R0002",
+            format!("unknown iter builtin `iter.{other}`"),
+        )),
     }
 }
 
@@ -1983,6 +2639,371 @@ mod tests {
         match exec_program(&module, &bodies, "main", Vec::new()) {
             Ok(Value::Str(s)) if s == "http://x/y?q=1" => {}
             other => fail(&format!("expected Str(\"http://x/y?q=1\"), got {other:?}")),
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // Capability-guard tests (L1-RUN-IO scope 1).
+    // -----------------------------------------------------------------
+
+    use crate::capability_runtime::{CapabilitySet, CapabilityToken};
+    use std::collections::BTreeMap as TestBTreeMap;
+
+    fn capset_with(token_effect: &str, principal: &str, expiry: Option<u64>) -> CapabilitySet {
+        let mut tokens = TestBTreeMap::new();
+        tokens.insert(
+            token_effect.to_string(),
+            CapabilityToken {
+                effect: token_effect.to_string(),
+                issued_to: principal.to_string(),
+                expires_at: expiry,
+            },
+        );
+        CapabilitySet {
+            tokens,
+            denials: Default::default(),
+            audit_required: Default::default(),
+        }
+    }
+
+    #[test]
+    fn cap_guard_allows_when_token_present() {
+        // `main` declares `uses log`; an `alice`-bound `log` token grants it.
+        let text = "module a\n\
+                    fn main() -> Int uses log:\n  return 1\n";
+        let (module, bodies) = compile(text);
+        let caps = capset_with("log", "alice", None);
+        match exec_program_with_caps(
+            &module,
+            &bodies,
+            "main",
+            Vec::new(),
+            Some(&caps),
+            "alice",
+            0,
+        ) {
+            Ok(Value::Int(1)) => {}
+            other => fail(&format!("expected Int(1), got {other:?}")),
+        }
+    }
+
+    #[test]
+    fn cap_guard_denies_with_cap0001_when_token_missing() {
+        // Callee declares `uses db.write`; no token is granted.
+        let text = "module a\n\
+                    fn writer() -> Int uses db.write:\n  return 1\n\
+                    fn main() -> Int:\n  return writer()\n";
+        let (module, bodies) = compile(text);
+        let caps = CapabilitySet::default();
+        match exec_program_with_caps(
+            &module,
+            &bodies,
+            "main",
+            Vec::new(),
+            Some(&caps),
+            "alice",
+            0,
+        ) {
+            Err(err) => {
+                if err.code != "CAP0001" {
+                    fail(&format!("expected CAP0001, got {}", err.code));
+                }
+            }
+            Ok(v) => fail(&format!("expected CAP0001, got Ok({v:?})")),
+        }
+    }
+
+    #[test]
+    fn cap_guard_denies_with_cap0003_on_principal_mismatch() {
+        // Token issued to `bob`, but the call runs as `alice`.
+        let text = "module a\n\
+                    fn writer() -> Int uses db.write:\n  return 1\n\
+                    fn main() -> Int:\n  return writer()\n";
+        let (module, bodies) = compile(text);
+        let caps = capset_with("db.write", "bob", None);
+        match exec_program_with_caps(
+            &module,
+            &bodies,
+            "main",
+            Vec::new(),
+            Some(&caps),
+            "alice",
+            0,
+        ) {
+            Err(err) => {
+                if err.code != "CAP0003" {
+                    fail(&format!("expected CAP0003, got {}", err.code));
+                }
+            }
+            Ok(v) => fail(&format!("expected CAP0003, got Ok({v:?})")),
+        }
+    }
+
+    #[test]
+    fn cap_guard_default_is_unenforced() {
+        // No `caps` argument: the original `exec_program` path runs and
+        // the missing `db.write` token does *not* block the call.
+        let text = "module a\n\
+                    fn writer() -> Int uses db.write:\n  return 7\n\
+                    fn main() -> Int:\n  return writer()\n";
+        let (module, bodies) = compile(text);
+        match exec_program(&module, &bodies, "main", Vec::new()) {
+            Ok(Value::Int(7)) => {}
+            other => fail(&format!("expected Int(7), got {other:?}")),
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // I/O / time / env builtin tests (L1-RUN-IO scope 2).
+    // -----------------------------------------------------------------
+
+    fn tmp_path(name: &str) -> String {
+        let mut p = std::env::temp_dir();
+        let pid = std::process::id();
+        let nanos = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+            Ok(d) => d.subsec_nanos() as u64,
+            Err(_) => 0,
+        };
+        p.push(format!("ori-test-{pid}-{nanos}-{name}"));
+        p.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn io_read_file_returns_ok_with_contents() {
+        let path = tmp_path("read.txt");
+        let _ = std::fs::write(&path, "hello\n");
+        let text = format!(
+            "module a\nfn main() -> Str:\n  return io.read_file(\"{}\")\n",
+            path.replace('\\', "\\\\")
+        );
+        let (module, bodies) = compile(&text);
+        match exec_program(&module, &bodies, "main", Vec::new()) {
+            Ok(Value::Ok_(inner)) => {
+                if *inner != Value::Str("hello\n".into()) {
+                    fail(&format!("unexpected payload: {inner:?}"));
+                }
+            }
+            other => fail(&format!("expected Ok(Str), got {other:?}")),
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn io_write_then_read_file_roundtrip() {
+        let path = tmp_path("write.txt");
+        let text = format!(
+            "module a\nfn main() -> Str:\n  let _ = io.write_file(\"{p}\", \"hi-there\")\n  return io.read_file(\"{p}\")\n",
+            p = path.replace('\\', "\\\\")
+        );
+        let (module, bodies) = compile(&text);
+        match exec_program(&module, &bodies, "main", Vec::new()) {
+            Ok(Value::Ok_(inner)) => {
+                if *inner != Value::Str("hi-there".into()) {
+                    fail(&format!("unexpected payload: {inner:?}"));
+                }
+            }
+            other => fail(&format!("expected Ok(Str), got {other:?}")),
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn io_print_line_routes_through_capture_buffer() {
+        install_print_capture();
+        let text = "module a\nfn main() -> Int:\n  let _ = io.print_line(\"line-a\")\n  let _ = io.print_line(\"line-b\")\n  return 0\n";
+        let (module, bodies) = compile(text);
+        match exec_program(&module, &bodies, "main", Vec::new()) {
+            Ok(Value::Int(0)) => {}
+            other => fail(&format!("expected Int(0), got {other:?}")),
+        }
+        let captured = take_print_capture();
+        if captured != vec!["line-a".to_string(), "line-b".to_string()] {
+            fail(&format!("unexpected capture buffer: {captured:?}"));
+        }
+    }
+
+    #[test]
+    fn env_get_returns_some_for_set_var() {
+        let key = "ORI_TEST_ENV_GET_SET";
+        std::env::set_var(key, "value-x");
+        let text = format!("module a\nfn main() -> Str:\n  return env.get(\"{key}\")\n");
+        let (module, bodies) = compile(&text);
+        match exec_program(&module, &bodies, "main", Vec::new()) {
+            Ok(Value::Some_(inner)) => {
+                if *inner != Value::Str("value-x".into()) {
+                    fail(&format!("unexpected payload: {inner:?}"));
+                }
+            }
+            other => fail(&format!("expected Some(Str), got {other:?}")),
+        }
+        std::env::remove_var(key);
+    }
+
+    #[test]
+    fn env_get_returns_none_for_unset_var() {
+        let key = "ORI_TEST_ENV_GET_MISSING";
+        std::env::remove_var(key);
+        let text = format!("module a\nfn main() -> Str:\n  return env.get(\"{key}\")\n");
+        let (module, bodies) = compile(&text);
+        match exec_program(&module, &bodies, "main", Vec::new()) {
+            Ok(Value::None_) => {}
+            other => fail(&format!("expected None, got {other:?}")),
+        }
+    }
+
+    #[test]
+    fn time_now_unix_is_monotonic_across_calls() {
+        let text = "module a\nfn main() -> Int:\n  return time.now_unix()\n";
+        let (module, bodies) = compile(text);
+        let a = match exec_program(&module, &bodies, "main", Vec::new()) {
+            Ok(Value::Int(i)) => i,
+            other => {
+                fail(&format!("expected Int, got {other:?}"));
+            }
+        };
+        let b = match exec_program(&module, &bodies, "main", Vec::new()) {
+            Ok(Value::Int(i)) => i,
+            other => {
+                fail(&format!("expected Int, got {other:?}"));
+            }
+        };
+        if b < a {
+            fail(&format!("expected b >= a, got a={a} b={b}"));
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // iter.* combinator tests (L1-RUN-IO scope 3).
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn iter_zip_pairs_elements() {
+        let text = "module a\nfn main() -> Int:\n  let xs = List(1, 2, 3)\n  let ys = List(10, 20, 30)\n  return iter.zip(xs, ys)\n";
+        assert_value(
+            text,
+            Value::List(vec![
+                Value::List(vec![Value::Int(1), Value::Int(10)]),
+                Value::List(vec![Value::Int(2), Value::Int(20)]),
+                Value::List(vec![Value::Int(3), Value::Int(30)]),
+            ]),
+        );
+    }
+
+    #[test]
+    fn iter_enumerate_indexes_elements() {
+        let text = "module a\nfn main() -> Int:\n  let xs = List(\"a\", \"b\")\n  return iter.enumerate(xs)\n";
+        assert_value(
+            text,
+            Value::List(vec![
+                Value::List(vec![Value::Int(0), Value::Str("a".into())]),
+                Value::List(vec![Value::Int(1), Value::Str("b".into())]),
+            ]),
+        );
+    }
+
+    #[test]
+    fn iter_take_returns_prefix() {
+        let text =
+            "module a\nfn main() -> Int:\n  let xs = List(1, 2, 3, 4)\n  return iter.take(xs, 2)\n";
+        assert_value(text, Value::List(vec![Value::Int(1), Value::Int(2)]));
+    }
+
+    #[test]
+    fn iter_skip_drops_prefix() {
+        let text =
+            "module a\nfn main() -> Int:\n  let xs = List(1, 2, 3, 4)\n  return iter.skip(xs, 2)\n";
+        assert_value(text, Value::List(vec![Value::Int(3), Value::Int(4)]));
+    }
+
+    #[test]
+    fn iter_fold_accumulates_with_initial() {
+        // Echo the accumulator; the final value is the last element since
+        // the lambda returns `b` (the new item) and discards `a`.
+        let text = "module a\nfn main() -> Int:\n  let xs = List(1, 2, 3)\n  return iter.fold(xs, 0, fn (a, b) => b)\n";
+        assert_value(text, Value::Int(3));
+    }
+
+    #[test]
+    fn iter_reduce_empty_returns_none() {
+        let text = "module a\nfn main() -> Int:\n  let xs = List()\n  return iter.reduce(xs, fn (a, b) => b)\n";
+        assert_value(text, Value::None_);
+    }
+
+    #[test]
+    fn iter_all_returns_true_when_predicate_holds() {
+        let text =
+            "module a\nfn main() -> Bool:\n  let xs = List(1, 2, 3)\n  return iter.all(xs, fn (x) => true)\n";
+        assert_value(text, Value::Bool(true));
+    }
+
+    #[test]
+    fn iter_any_returns_true_when_one_matches() {
+        let text =
+            "module a\nfn main() -> Bool:\n  let xs = List(1, 2, 3)\n  return iter.any(xs, fn (x) => true)\n";
+        assert_value(text, Value::Bool(true));
+    }
+
+    #[test]
+    fn iter_find_returns_some_for_match() {
+        let text =
+            "module a\nfn main() -> Int:\n  let xs = List(1, 2, 3)\n  return iter.find(xs, fn (x) => true)\n";
+        assert_value(text, Value::Some_(Box::new(Value::Int(1))));
+    }
+
+    #[test]
+    fn iter_count_returns_length() {
+        let text =
+            "module a\nfn main() -> Int:\n  let xs = List(1, 2, 3)\n  return iter.count(xs)\n";
+        assert_value(text, Value::Int(3));
+    }
+
+    // -----------------------------------------------------------------
+    // Stack-trace tests (L1-RUN-IO scope 4).
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn stack_trace_shallow_shows_entry_frame() {
+        // `main` itself is the only frame at the time the unknown name
+        // lookup fails. With name resolution failing inside main's body,
+        // the snapshot must contain `["main"]`.
+        let text = "module a\nfn main() -> Int:\n  return missing_name\n";
+        let (module, bodies) = compile(text);
+        match exec_program(&module, &bodies, "main", Vec::new()) {
+            Err(err) => {
+                if err.code != "R0002" {
+                    fail(&format!("expected R0002, got {}", err.code));
+                }
+                if err.frames != vec!["main".to_string()] {
+                    fail(&format!("expected frames [main], got {:?}", err.frames));
+                }
+            }
+            Ok(v) => fail(&format!("expected R0002, got Ok({v:?})")),
+        }
+    }
+
+    #[test]
+    fn stack_trace_deep_includes_callee_chain() {
+        // main -> outer -> inner, where inner triggers R0002. The frames
+        // snapshot must include every push in call order.
+        let text = "module a\n\
+                    fn inner() -> Int:\n  return missing\n\
+                    fn outer() -> Int:\n  return inner()\n\
+                    fn main() -> Int:\n  return outer()\n";
+        let (module, bodies) = compile(text);
+        match exec_program(&module, &bodies, "main", Vec::new()) {
+            Err(err) => {
+                if err.code != "R0002" {
+                    fail(&format!("expected R0002, got {}", err.code));
+                }
+                if err.frames != vec!["main".to_string(), "outer".to_string(), "inner".to_string()]
+                {
+                    fail(&format!(
+                        "expected frames [main, outer, inner], got {:?}",
+                        err.frames
+                    ));
+                }
+            }
+            Ok(v) => fail(&format!("expected R0002, got Ok({v:?})")),
         }
     }
 }

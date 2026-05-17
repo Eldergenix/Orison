@@ -121,6 +121,12 @@ pub struct ServerCapabilities {
     pub inlay_hint_provider: bool,
     pub folding_range_provider: bool,
     pub selection_range_provider: bool,
+    #[serde(default)]
+    pub call_hierarchy_provider: bool,
+    #[serde(default)]
+    pub type_hierarchy_provider: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execute_command_provider: Option<ExecuteCommandOptions>,
 }
 
 impl Default for ServerCapabilities {
@@ -141,8 +147,36 @@ impl Default for ServerCapabilities {
             inlay_hint_provider: true,
             folding_range_provider: true,
             selection_range_provider: true,
+            call_hierarchy_provider: true,
+            type_hierarchy_provider: true,
+            execute_command_provider: Some(ExecuteCommandOptions::default()),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecuteCommandOptions {
+    pub commands: Vec<String>,
+}
+
+impl Default for ExecuteCommandOptions {
+    fn default() -> Self {
+        Self {
+            commands: vec![
+                crate::refactor::COMMAND_EXTRACT_FUNCTION.to_string(),
+                crate::refactor::COMMAND_INLINE.to_string(),
+            ],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecuteCommandParams {
+    pub command: String,
+    #[serde(default)]
+    pub arguments: Vec<Value>,
 }
 
 /// `semanticTokensProvider` capability advertising the legend used by

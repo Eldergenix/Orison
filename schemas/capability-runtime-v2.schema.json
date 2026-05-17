@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ori.capability_runtime.v2",
+  "title": "Orison Capability Runtime Report v2",
+  "description": "Per-call runtime capability guard outcome, including delegation chain context. Emitted by `guard_with_chain_report_json` for chain-aware guard evaluations (delegation, attenuation, revocation).",
+  "type": "object",
+  "required": [
+    "schema",
+    "outcome",
+    "chain"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.capability_runtime.v2"
+    },
+    "outcome": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["outcome"],
+          "properties": {
+            "outcome": { "const": "allowed" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["outcome", "code", "reason"],
+          "properties": {
+            "outcome": { "const": "denied" },
+            "code": {
+              "enum": [
+                "CAP0001",
+                "CAP0002",
+                "CAP0003",
+                "CAP0004",
+                "CAP0005",
+                "CAP0006",
+                "CAP0007",
+                "CAP0008",
+                "CAP0009",
+                "CAP0010"
+              ]
+            },
+            "reason": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "chain": {
+      "type": "object",
+      "required": [
+        "original_issuer",
+        "hops"
+      ],
+      "properties": {
+        "original_issuer": {
+          "type": "string"
+        },
+        "hops": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "required": [
+              "from",
+              "to",
+              "at",
+              "effects_subset"
+            ],
+            "properties": {
+              "from": { "type": "string" },
+              "to": { "type": "string" },
+              "at": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "effects_subset": {
+                "type": "array",
+                "items": { "type": "string" },
+                "uniqueItems": true
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.capability_runtime.v2",
+      "outcome": { "outcome": "allowed" },
+      "chain": {
+        "original_issuer": "alice",
+        "hops": [
+          {
+            "from": "alice",
+            "to": "bob",
+            "at": 1700000000,
+            "effects_subset": ["db.read"]
+          }
+        ]
+      }
+    },
+    {
+      "schema": "ori.capability_runtime.v2",
+      "outcome": {
+        "outcome": "denied",
+        "code": "CAP0006",
+        "reason": "effect `db.write` is revoked for principal `alice`"
+      },
+      "chain": {
+        "original_issuer": "alice",
+        "hops": []
+      }
+    }
+  ]
+}

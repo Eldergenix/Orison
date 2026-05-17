@@ -1,0 +1,240 @@
+name: release-publish
+
+# Tag-triggered release publisher. Pushing a semver tag (e.g. v0.1.2) builds
+# the `ori` CLI for the official target matrix, packages each binary, computes
+# SHA256 hashes, and publishes a GitHub Release with the artefacts attached.
+#
+# The companion workflow `release.yml` is the manual full-validation gate; this
+# workflow assumes that gate has been run by the maintainer before tagging
+# (see docs/release/CUTTING-A-RELEASE.md).
+#
+# Dep policy: only the Rust toolchain action, actions/upload-artifact,
+# actions/download-artifact, and softprops/action-gh-release are used. No new
+# Rust crates are introduced.
+#
+# Security: workflow_dispatch inputs and event-controlled values are NEVER
+# interpolated directly into run: blocks. They are passed via `env:` so the
+# shell expands them as variables, not as code.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Pre-existing tag to (re)build a release for"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build ${{ matrix.os_label }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os_label: linux
+            arch: x86_64
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive_ext: tar.gz
+            bin_name: ori
+          - os_label: linux
+            arch: aarch64
+            runner: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            archive_ext: tar.gz
+            bin_name: ori
+            cross: true
+          - os_label: macos
+            arch: x86_64
+            runner: macos-latest
+            target: x86_64-apple-darwin
+            archive_ext: tar.gz
+            bin_name: ori
+          - os_label: macos
+            arch: aarch64
+            runner: macos-latest
+            target: aarch64-apple-darwin
+            archive_ext: tar.gz
+            bin_name: ori
+          - os_label: windows
+            arch: x86_64
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive_ext: zip
+            bin_name: ori.exe
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.92"
+          targets: ${{ matrix.target }}
+
+      - name: Install aarch64 cross-compiler (Linux)
+        if: matrix.cross == true
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          mkdir -p .cargo
+          {
+            echo '[target.aarch64-unknown-linux-gnu]'
+            echo 'linker = "aarch64-linux-gnu-gcc"'
+          } >> .cargo/config.toml
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-release-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', 'rust-toolchain.toml') }}
+          restore-keys: |
+            cargo-release-${{ matrix.target }}-
+
+      - name: Build release binary
+        env:
+          TARGET: ${{ matrix.target }}
+        run: cargo build --release -p ori --target "$TARGET"
+
+      - name: Determine release tag
+        id: tag
+        shell: bash
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ -n "$INPUT_TAG" ]; then
+            # Whitelist: only allow vMAJOR.MINOR.PATCH (optional -prerelease).
+            case "$INPUT_TAG" in
+              v[0-9]*.[0-9]*.[0-9]*) ;;
+              *) echo "invalid tag input: $INPUT_TAG" >&2; exit 2 ;;
+            esac
+            printf 'tag=%s\n' "$INPUT_TAG" >> "$GITHUB_OUTPUT"
+          else
+            printf 'tag=%s\n' "$REF_NAME" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Package artefact (Unix)
+        if: matrix.os_label != 'windows'
+        shell: bash
+        env:
+          OS_LABEL: ${{ matrix.os_label }}
+          ARCH: ${{ matrix.arch }}
+          TARGET: ${{ matrix.target }}
+          BIN_NAME: ${{ matrix.bin_name }}
+        run: |
+          set -eu
+          stage="$(mktemp -d)"
+          cp "target/${TARGET}/release/${BIN_NAME}" "${stage}/${BIN_NAME}"
+          cp LICENSE "${stage}/LICENSE"
+          cp README.md "${stage}/README.md"
+          archive="ori-${OS_LABEL}-${ARCH}.tar.gz"
+          tar -C "${stage}" --owner=0 --group=0 --mtime='UTC 2020-01-01' \
+              -czf "${archive}" "${BIN_NAME}" LICENSE README.md
+          shasum -a 256 "${archive}" | awk '{print $1}' > "${archive}.sha256"
+          {
+            printf 'ARTIFACT_PATH=%s\n' "${archive}"
+            printf 'ARTIFACT_SHA=%s\n' "${archive}.sha256"
+          } >> "$GITHUB_ENV"
+
+      - name: Package artefact (Windows)
+        if: matrix.os_label == 'windows'
+        shell: pwsh
+        env:
+          OS_LABEL: ${{ matrix.os_label }}
+          ARCH: ${{ matrix.arch }}
+          TARGET: ${{ matrix.target }}
+          BIN_NAME: ${{ matrix.bin_name }}
+        run: |
+          $stage = New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP "stage")
+          Copy-Item "target/$env:TARGET/release/$env:BIN_NAME" (Join-Path $stage $env:BIN_NAME)
+          Copy-Item LICENSE (Join-Path $stage "LICENSE")
+          Copy-Item README.md (Join-Path $stage "README.md")
+          $archive = "ori-$env:OS_LABEL-$env:ARCH.zip"
+          Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $archive -Force
+          $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLower()
+          Set-Content -Path "$archive.sha256" -Value $hash -NoNewline
+          Add-Content -Path $env:GITHUB_ENV -Value "ARTIFACT_PATH=$archive"
+          Add-Content -Path $env:GITHUB_ENV -Value "ARTIFACT_SHA=$archive.sha256"
+
+      - name: Upload artefact to workflow run
+        uses: actions/upload-artifact@v4
+        with:
+          name: ori-${{ matrix.os_label }}-${{ matrix.arch }}
+          path: |
+            ${{ env.ARTIFACT_PATH }}
+            ${{ env.ARTIFACT_SHA }}
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: publish github release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artefacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Compose release body
+        id: body
+        shell: bash
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          tag="$REF_NAME"
+          if [ -n "$INPUT_TAG" ]; then
+            case "$INPUT_TAG" in
+              v[0-9]*.[0-9]*.[0-9]*) tag="$INPUT_TAG" ;;
+              *) echo "invalid tag input: $INPUT_TAG" >&2; exit 2 ;;
+            esac
+          fi
+          {
+            printf '## Orison %s\n\n' "$tag"
+            printf 'Prebuilt CLI binaries for the official target matrix.\n\n'
+            printf '### SHA256 checksums\n\n'
+            printf '```\n'
+            (cd dist && for f in *.sha256; do
+              archive="${f%.sha256}"
+              sha="$(cat "$f")"
+              printf '%s  %s\n' "$sha" "$archive"
+            done) | sort
+            printf '```\n\n'
+            printf '### Install\n\n'
+            printf '```sh\n'
+            printf 'curl -fsSL https://raw.githubusercontent.com/%s/%s/scripts/install.sh | sh\n' "$REPO" "$tag"
+            printf '```\n'
+          } > RELEASE_BODY.md
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.body.outputs.tag }}
+          name: Orison ${{ steps.body.outputs.tag }}
+          body_path: RELEASE_BODY.md
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.sha256
+          fail_on_unmatched_files: true

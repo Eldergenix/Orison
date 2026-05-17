@@ -26,6 +26,13 @@ pub enum TypeRef {
     },
     /// Placeholder used by the inferencer for not-yet-resolved types.
     Unknown,
+    /// Unification variable produced by [`crate::generics`] during
+    /// generic instantiation. The numeric tag is allocated by
+    /// `FreshIds` and resolved via `Subst::apply`. A `Var(N)` that
+    /// survives past type inference is reported as `E0232`. This
+    /// variant is purely additive — existing call sites that do not
+    /// produce instantiation `Var`s never observe it.
+    Var(u32),
 }
 
 impl TypeRef {
@@ -50,6 +57,9 @@ impl TypeRef {
                 format!("Fn({inner}) -> {}", ret.display())
             }
             TypeRef::Unknown => "_".to_string(),
+            // Unification variables render as `?N` so they are
+            // visually distinct from `_` (unknown) in diagnostic messages.
+            TypeRef::Var(n) => format!("?{n}"),
         }
     }
 }

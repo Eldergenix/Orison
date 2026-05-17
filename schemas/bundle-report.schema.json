@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ori.bundle_report.v1",
+  "title": "Orison Bundle Report v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "format",
+    "bundle_path",
+    "entries",
+    "uncompressed_bytes",
+    "bundle_bytes",
+    "checksum"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.bundle_report.v1"
+    },
+    "format": {
+      "description": "Archive format. Only `tar` is implemented today; `zip` is reserved for a future release and currently surfaces BND0005.",
+      "enum": [
+        "tar",
+        "zip"
+      ]
+    },
+    "bundle_path": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Filesystem path the bundle was written to."
+    },
+    "entries": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Number of file entries written, including the manifest."
+    },
+    "uncompressed_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Sum of payload bytes across every entry, excluding tar headers and padding."
+    },
+    "bundle_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total size of the on-disk archive in bytes."
+    },
+    "checksum": {
+      "type": "string",
+      "pattern": "^[0-9a-f]+$",
+      "minLength": 16,
+      "maxLength": 16,
+      "description": "FNV-1a 64-bit checksum of the archive bytes rendered as lowercase hex (16 chars)."
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.bundle_report.v1",
+      "format": "tar",
+      "bundle_path": "target/release/app-users.tar",
+      "entries": 3,
+      "uncompressed_bytes": 17408,
+      "bundle_bytes": 20480,
+      "checksum": "0a1b2c3d4e5f6789"
+    }
+  ]
+}

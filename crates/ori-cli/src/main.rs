@@ -7,6 +7,9 @@ use ori_compiler::ast::SymbolKind;
 use ori_compiler::backend_dispatch::{build_dispatch_table, dispatch_report_json};
 use ori_compiler::bench::run_default_suite;
 use ori_compiler::body::parse_module_bodies;
+use ori_compiler::bundler::{
+    bundle as bundle_artefacts, bundle_report_json, BundleArtefact, BundleFormat, BundleInput,
+};
 use ori_compiler::capability_runtime::{
     guard_call_at, guard_report_json, CallContext, CapabilitySet, CapabilityToken,
 };
@@ -46,8 +49,9 @@ use ori_compiler::wasm_component::build_wasm_component_manifest;
 use ori_compiler::wasm_encoder::{encode_from_mir, encode_hello_module};
 use ori_compiler::Compiler;
 use ori_pkg::{
-    build_lockfile, build_sbom, resolve, run_audit, verify_provenance, LocalRegistry, Manifest,
-    PackageEntry, PublishReceipt, RegistryError, SbomFormat, REGISTRY_LIST_SCHEMA,
+    build_lockfile, build_sbom, parse_manifest, resolve, run_audit, verify_provenance,
+    LocalRegistry, Manifest, PackageEntry, PublishReceipt, RegistryError, SbomFormat, TomlValue,
+    REGISTRY_LIST_SCHEMA,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -77,6 +81,7 @@ fn main() {
         "provenance" => cmd_provenance(&args[1..]),
         "run" => cmd_run(&args[1..]),
         "build" => cmd_build(&args[1..]),
+        "bundle" => cmd_bundle(&args[1..]),
         "bench" => cmd_bench(&args[1..]),
         "openapi" => cmd_openapi(&args[1..]),
         "ui" => cmd_ui(&args[1..]),
@@ -130,6 +135,7 @@ fn print_help() {
     println!("  ori provenance verify [--json] <file.json>");
     println!("  ori run [--entry <name>] [--json] <file.ori>");
     println!("  ori build [--target dev|release|wasm-component|llvm-text|mobile] [--app-id <id>] [--platforms ios,android] [--ui-kind ios-uikit|ios-swiftui|android-compose|android-view] [--json] <file.ori>");
+    println!("  ori bundle --in <manifest> --out <bundle.tar> --format tar [--json]");
     println!("  ori bench [--json] [--samples N]");
     println!("  ori openapi [--json] <file.ori>");
     println!("  ori ui [--json] <file.ori>");
@@ -3298,4 +3304,198 @@ fn registry_exit_code(err: &RegistryError) -> i32 {
         RegistryError::Yanked(_) => 1,
         RegistryError::Io(_) => 2,
     }
+}
+
+/// Bundle a manifest plus a declared list of artefacts into a deterministic
+/// archive on disk.
+///
+/// Recognised flags:
+///   --in <manifest>      (path to ori.toml; required)
+///   --out <bundle.tar>   (output archive path; required)
+///   --format tar         (only `tar` is implemented; `zip` returns BND0005)
+///   --json               (emit the `ori.bundle_report.v1` envelope on stdout)
+///
+/// The CLI reads the `[bundle.artefact.<name>]` sections from the manifest.
+/// Each section requires a `source` path (resolved relative to the manifest
+/// directory) and a `dest` path inside the archive; an optional `kind` field
+/// (`manifest`, `binary`, `asset`) is echoed back in the report.
+fn cmd_bundle(args: &[String]) -> i32 {
+    let mut manifest: Option<String> = None;
+    let mut output: Option<String> = None;
+    let mut format = BundleFormat::Tar;
+    let mut json = false;
+    let mut idx = 0usize;
+    while idx < args.len() {
+        match args[idx].as_str() {
+            "--in" => {
+                let Some(value) = args.get(idx + 1) else {
+                    eprintln!("--in requires a value");
+                    return 2;
+                };
+                manifest = Some(value.clone());
+                idx += 2;
+            }
+            "--out" => {
+                let Some(value) = args.get(idx + 1) else {
+                    eprintln!("--out requires a value");
+                    return 2;
+                };
+                output = Some(value.clone());
+                idx += 2;
+            }
+            "--format" => {
+                let Some(value) = args.get(idx + 1) else {
+                    eprintln!("--format requires a value");
+                    return 2;
+                };
+                format = match value.as_str() {
+                    "tar" => BundleFormat::Tar,
+                    "zip" => BundleFormat::Zip,
+                    other => {
+                        eprintln!("unknown bundle format `{other}` (expected `tar` or `zip`)");
+                        return 2;
+                    }
+                };
+                idx += 2;
+            }
+            "--json" => {
+                json = true;
+                idx += 1;
+            }
+            "--help" | "-h" => {
+                println!(
+                    "usage: ori bundle --in <manifest> --out <bundle.tar> --format tar [--json]"
+                );
+                return 0;
+            }
+            other => {
+                eprintln!("unknown flag `{other}`");
+                return 2;
+            }
+        }
+    }
+    let Some(manifest) = manifest else {
+        eprintln!("usage: ori bundle --in <manifest> --out <bundle.tar> --format tar [--json]");
+        return 2;
+    };
+    let Some(output) = output else {
+        eprintln!("usage: ori bundle --in <manifest> --out <bundle.tar> --format tar [--json]");
+        return 2;
+    };
+
+    let manifest_path = PathBuf::from(&manifest);
+    let manifest_dir = manifest_path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+
+    let artefacts = match collect_bundle_artefacts(&manifest_path, &manifest_dir) {
+        Ok(list) => list,
+        Err(code) => return code,
+    };
+
+    let input = BundleInput {
+        manifest: manifest_path,
+        artefacts,
+    };
+    let output_path = PathBuf::from(&output);
+    match bundle_artefacts(&input, &output_path, format) {
+        Ok(report) => {
+            if json {
+                println!("{}", bundle_report_json(&report));
+            } else {
+                println!(
+                    "bundle: wrote {} entries ({} payload bytes, {} bundle bytes) to {} checksum={}",
+                    report.entries,
+                    report.uncompressed_bytes,
+                    report.bundle_bytes,
+                    report.bundle_path.display(),
+                    report.checksum
+                );
+            }
+            0
+        }
+        Err(err) => {
+            eprintln!("bundle failed: {err}");
+            1
+        }
+    }
+}
+
+/// Read `[bundle.artefact.<name>]` sections from `manifest_path` and produce
+/// a `Vec<BundleArtefact>` suitable for `bundler::bundle`. Paths in
+/// `source` are resolved relative to `manifest_dir`. The function uses
+/// `ori_pkg::parse_manifest`, which is a hand-rolled TOML subset parser
+/// (no extra dependencies).
+fn collect_bundle_artefacts(
+    manifest_path: &Path,
+    manifest_dir: &Path,
+) -> Result<Vec<BundleArtefact>, i32> {
+    if !manifest_path.exists() {
+        return Ok(Vec::new());
+    }
+    let text = match fs::read_to_string(manifest_path) {
+        Ok(text) => text,
+        Err(err) => {
+            eprintln!(
+                "failed to read manifest `{}`: {err}",
+                manifest_path.display()
+            );
+            return Err(2);
+        }
+    };
+    let doc = match parse_manifest(&text) {
+        Ok(doc) => doc,
+        Err(err) => {
+            eprintln!(
+                "failed to parse manifest `{}`: {err}",
+                manifest_path.display()
+            );
+            return Err(2);
+        }
+    };
+    let mut artefacts: Vec<BundleArtefact> = Vec::new();
+    for (section, table) in &doc {
+        let Some(rest) = section.strip_prefix("bundle.artefact.") else {
+            continue;
+        };
+        if rest.is_empty() || rest.contains('.') {
+            continue;
+        }
+        let mut source: Option<String> = None;
+        let mut dest: Option<String> = None;
+        let mut kind: String = "asset".to_string();
+        for (key, value) in table {
+            match (key.as_str(), value) {
+                ("source", TomlValue::String(s)) => source = Some(s.clone()),
+                ("dest", TomlValue::String(s)) => dest = Some(s.clone()),
+                ("kind", TomlValue::String(s)) => kind = s.clone(),
+                (other, _) => {
+                    eprintln!(
+                        "manifest section `[bundle.artefact.{rest}]` has unknown key `{other}`"
+                    );
+                    return Err(2);
+                }
+            }
+        }
+        let Some(source) = source else {
+            eprintln!("manifest section `[bundle.artefact.{rest}]` is missing `source`");
+            return Err(2);
+        };
+        let Some(dest) = dest else {
+            eprintln!("manifest section `[bundle.artefact.{rest}]` is missing `dest`");
+            return Err(2);
+        };
+        let source_path = if Path::new(&source).is_absolute() {
+            PathBuf::from(&source)
+        } else {
+            manifest_dir.join(&source)
+        };
+        artefacts.push(BundleArtefact {
+            source: source_path,
+            dest,
+            kind,
+        });
+    }
+    Ok(artefacts)
 }

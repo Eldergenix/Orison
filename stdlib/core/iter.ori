@@ -1,4 +1,9 @@
 // capsule: core.iter — Lazy iterator primitives used across collections and streams.
+//
+// Combinators delegate to the runtime `iter.*` builtins (defined in
+// `crates/ori-compiler/src/interp_exec.rs`). For the bootstrap an
+// `Iter[T]` is modelled as a `List[T]`; a lazy stream IR will replace
+// this once stage-2 lands.
 module core.iter
 
 import core.option
@@ -18,5 +23,55 @@ fn filter[T](iter: Iter[T], pred: Fn(T) -> Bool) -> Iter[T]:
 fn collect_list[T](iter: Iter[T]) -> List[T]:
   return List.empty()
 
+// Length of `iter`. Delegates to `iter.count` which inspects the
+// underlying `List[T]`; O(1) for the bootstrap runtime.
 fn count[T](iter: Iter[T]) -> Int:
-  return 0
+  return iter.count(iter)
+
+// Pair each element of `a` with the matching element of `b`, stopping
+// when the shorter list is exhausted. The result is a `List` of
+// 2-element `List`s — tuples are not yet runtime-supported.
+fn zip[T, U](a: Iter[T], b: Iter[U]) -> Iter[T]:
+  return iter.zip(a, b)
+
+// Index every element of `iter` starting at 0. Each emitted element
+// becomes a 2-element list `[index, value]`.
+fn enumerate[T](iter: Iter[T]) -> Iter[T]:
+  return iter.enumerate(iter)
+
+// Yield at most `n` elements from the front of `iter`. Negative counts
+// surface a runtime error; non-negative counts beyond the iterator's
+// length collapse to "take everything available".
+fn take[T](iter: Iter[T], n: Int) -> Iter[T]:
+  return iter.take(iter, n)
+
+// Drop the first `n` elements of `iter`. Mirrors `take`'s contract
+// for negative / over-length counts.
+fn skip[T](iter: Iter[T], n: Int) -> Iter[T]:
+  return iter.skip(iter, n)
+
+// Left fold over `iter` with the supplied `init`. `f(acc, item)` is
+// invoked once per element in source order; the final accumulator is
+// returned.
+fn fold[T, A](iter: Iter[T], init: A, f: Fn(A, T) -> A) -> A:
+  return iter.fold(iter, init, f)
+
+// Reduce non-empty `iter` left-to-right using `f`. Returns `None` for
+// an empty input so callers don't have to nominate a synthetic seed.
+fn reduce[T](iter: Iter[T], f: Fn(T, T) -> T) -> Option[T]:
+  return iter.reduce(iter, f)
+
+// True when `pred` returns true for every element of `iter`. Vacuously
+// true for an empty input.
+fn all[T](iter: Iter[T], pred: Fn(T) -> Bool) -> Bool:
+  return iter.all(iter, pred)
+
+// True when `pred` returns true for at least one element of `iter`.
+// Vacuously false for an empty input.
+fn any[T](iter: Iter[T], pred: Fn(T) -> Bool) -> Bool:
+  return iter.any(iter, pred)
+
+// Return `Some(item)` for the first element where `pred` is true, or
+// `None` when none match.
+fn find[T](iter: Iter[T], pred: Fn(T) -> Bool) -> Option[T]:
+  return iter.find(iter, pred)

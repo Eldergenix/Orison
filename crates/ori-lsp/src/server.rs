@@ -26,12 +26,19 @@ use crate::protocol::{
     CodeActionParams, CodeLens, CodeLensParams, Command, CompletionItem, CompletionItemKind,
     CompletionList, CompletionParams, DefinitionParams, DidChangeTextDocumentParams,
     DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentFormattingParams,
-    DocumentSymbolParams, FoldingRange, FoldingRangeParams, Hover, HoverParams, InitializeParams,
-    InitializeResult, InlayHint, InlayHintParams, Location, MarkupContent, NotificationMessage,
-    Position, PublishDiagnosticsParams, Range, ReferenceParams, RenameParams, RequestId,
-    RequestMessage, SelectionRange, SelectionRangeParams, SemanticTokens, SemanticTokensParams,
-    ServerCapabilities, ServerInfo, SymbolInformation, SymbolKind as LspSymbolKind, TextEdit,
-    WorkspaceEdit, WorkspaceSymbolParams,
+    DocumentSymbolParams, ExecuteCommandParams, FoldingRange, FoldingRangeParams, Hover,
+    HoverParams, InitializeParams, InitializeResult, InlayHint, InlayHintParams, Location,
+    MarkupContent, NotificationMessage, Position, PublishDiagnosticsParams, Range, ReferenceParams,
+    RenameParams, RequestId, RequestMessage, SelectionRange, SelectionRangeParams, SemanticTokens,
+    SemanticTokensParams, ServerCapabilities, ServerInfo, SymbolInformation,
+    SymbolKind as LspSymbolKind, TextEdit, WorkspaceEdit, WorkspaceSymbolParams,
+};
+use crate::refactor::{
+    extract_function, incoming_calls, inline, outgoing_calls, prepare_call_hierarchy,
+    prepare_type_hierarchy, subtypes, supertypes, CallHierarchyIncomingCallsParams,
+    CallHierarchyOutgoingCallsParams, CallHierarchyPrepareParams, ExtractFunctionArgs, InlineArgs,
+    RefactorOutcome, TypeHierarchyPrepareParams, TypeHierarchySubtypesParams,
+    TypeHierarchySupertypesParams, WorkspaceDoc, COMMAND_EXTRACT_FUNCTION, COMMAND_INLINE,
 };
 use crate::state::WorkspaceState;
 
@@ -176,6 +183,17 @@ impl Server {
             "textDocument/inlayHint" => self.on_inlay_hint(writer, &request)?,
             "textDocument/foldingRange" => self.on_folding_range(writer, &request)?,
             "textDocument/selectionRange" => self.on_selection_range(writer, &request)?,
+            "textDocument/prepareCallHierarchy" => {
+                self.on_prepare_call_hierarchy(writer, &request)?
+            }
+            "callHierarchy/incomingCalls" => self.on_incoming_calls(writer, &request)?,
+            "callHierarchy/outgoingCalls" => self.on_outgoing_calls(writer, &request)?,
+            "textDocument/prepareTypeHierarchy" => {
+                self.on_prepare_type_hierarchy(writer, &request)?
+            }
+            "typeHierarchy/supertypes" => self.on_type_hierarchy_supertypes(writer, &request)?,
+            "typeHierarchy/subtypes" => self.on_type_hierarchy_subtypes(writer, &request)?,
+            "workspace/executeCommand" => self.on_execute_command(writer, &request)?,
             other => {
                 let body = error_response(
                     &request.id,
@@ -933,6 +951,307 @@ impl Server {
             out.push(build_selection_range(&document.text, &result, *position));
         }
         write_typed_response(writer, &request.id, &out)
+    }
+
+    // ---------- call hierarchy ----------
+
+    fn on_prepare_call_hierarchy<W: Write>(
+        &mut self,
+        writer: &mut W,
+        request: &RequestMessage,
+    ) -> io::Result<()> {
+        let Some(params_value) = request.params.clone() else {
+            return write_invalid_params(
+                writer,
+                &request.id,
+                "prepareCallHierarchy requires params",
+            );
+        };
+        let params: CallHierarchyPrepareParams = match serde_json::from_value(params_value) {
+            Ok(params) => params,
+            Err(err) => {
+                return write_invalid_params(
+                    writer,
+                    &request.id,
+                    &format!("invalid prepareCallHierarchy params: {err}"),
+                );
+            }
+        };
+        let docs: Vec<_> = self
+            .state
+            .iter()
+            .map(|d| WorkspaceDoc {
+                uri: d.uri.as_str(),
+                text: d.text.as_str(),
+            })
+            .collect();
+        let result = prepare_call_hierarchy(&docs, &params.text_document.uri, params.position);
+        write_typed_response(writer, &request.id, &result)
+    }
+
+    fn on_incoming_calls<W: Write>(
+        &mut self,
+        writer: &mut W,
+        request: &RequestMessage,
+    ) -> io::Result<()> {
+        let Some(params_value) = request.params.clone() else {
+            return write_invalid_params(writer, &request.id, "incomingCalls requires params");
+        };
+        let params: CallHierarchyIncomingCallsParams = match serde_json::from_value(params_value) {
+            Ok(params) => params,
+            Err(err) => {
+                return write_invalid_params(
+                    writer,
+                    &request.id,
+                    &format!("invalid incomingCalls params: {err}"),
+                );
+            }
+        };
+        let docs: Vec<_> = self
+            .state
+            .iter()
+            .map(|d| WorkspaceDoc {
+                uri: d.uri.as_str(),
+                text: d.text.as_str(),
+            })
+            .collect();
+        let result = incoming_calls(&docs, &params.item);
+        write_typed_response(writer, &request.id, &result)
+    }
+
+    fn on_outgoing_calls<W: Write>(
+        &mut self,
+        writer: &mut W,
+        request: &RequestMessage,
+    ) -> io::Result<()> {
+        let Some(params_value) = request.params.clone() else {
+            return write_invalid_params(writer, &request.id, "outgoingCalls requires params");
+        };
+        let params: CallHierarchyOutgoingCallsParams = match serde_json::from_value(params_value) {
+            Ok(params) => params,
+            Err(err) => {
+                return write_invalid_params(
+                    writer,
+                    &request.id,
+                    &format!("invalid outgoingCalls params: {err}"),
+                );
+            }
+        };
+        let docs: Vec<_> = self
+            .state
+            .iter()
+            .map(|d| WorkspaceDoc {
+                uri: d.uri.as_str(),
+                text: d.text.as_str(),
+            })
+            .collect();
+        let result = outgoing_calls(&docs, &params.item);
+        write_typed_response(writer, &request.id, &result)
+    }
+
+    // ---------- type hierarchy ----------
+
+    fn on_prepare_type_hierarchy<W: Write>(
+        &mut self,
+        writer: &mut W,
+        request: &RequestMessage,
+    ) -> io::Result<()> {
+        let Some(params_value) = request.params.clone() else {
+            return write_invalid_params(
+                writer,
+                &request.id,
+                "prepareTypeHierarchy requires params",
+            );
+        };
+        let params: TypeHierarchyPrepareParams = match serde_json::from_value(params_value) {
+            Ok(params) => params,
+            Err(err) => {
+                return write_invalid_params(
+                    writer,
+                    &request.id,
+                    &format!("invalid prepareTypeHierarchy params: {err}"),
+                );
+            }
+        };
+        let docs: Vec<_> = self
+            .state
+            .iter()
+            .map(|d| WorkspaceDoc {
+                uri: d.uri.as_str(),
+                text: d.text.as_str(),
+            })
+            .collect();
+        let result = prepare_type_hierarchy(&docs, &params.text_document.uri, params.position);
+        write_typed_response(writer, &request.id, &result)
+    }
+
+    fn on_type_hierarchy_supertypes<W: Write>(
+        &mut self,
+        writer: &mut W,
+        request: &RequestMessage,
+    ) -> io::Result<()> {
+        let Some(params_value) = request.params.clone() else {
+            return write_invalid_params(
+                writer,
+                &request.id,
+                "typeHierarchy/supertypes requires params",
+            );
+        };
+        let params: TypeHierarchySupertypesParams = match serde_json::from_value(params_value) {
+            Ok(params) => params,
+            Err(err) => {
+                return write_invalid_params(
+                    writer,
+                    &request.id,
+                    &format!("invalid typeHierarchy/supertypes params: {err}"),
+                );
+            }
+        };
+        let docs: Vec<_> = self
+            .state
+            .iter()
+            .map(|d| WorkspaceDoc {
+                uri: d.uri.as_str(),
+                text: d.text.as_str(),
+            })
+            .collect();
+        let result = supertypes(&docs, &params.item);
+        write_typed_response(writer, &request.id, &result)
+    }
+
+    fn on_type_hierarchy_subtypes<W: Write>(
+        &mut self,
+        writer: &mut W,
+        request: &RequestMessage,
+    ) -> io::Result<()> {
+        let Some(params_value) = request.params.clone() else {
+            return write_invalid_params(
+                writer,
+                &request.id,
+                "typeHierarchy/subtypes requires params",
+            );
+        };
+        let params: TypeHierarchySubtypesParams = match serde_json::from_value(params_value) {
+            Ok(params) => params,
+            Err(err) => {
+                return write_invalid_params(
+                    writer,
+                    &request.id,
+                    &format!("invalid typeHierarchy/subtypes params: {err}"),
+                );
+            }
+        };
+        let docs: Vec<_> = self
+            .state
+            .iter()
+            .map(|d| WorkspaceDoc {
+                uri: d.uri.as_str(),
+                text: d.text.as_str(),
+            })
+            .collect();
+        let result = subtypes(&docs, &params.item);
+        write_typed_response(writer, &request.id, &result)
+    }
+
+    // ---------- execute command (refactors) ----------
+
+    fn on_execute_command<W: Write>(
+        &mut self,
+        writer: &mut W,
+        request: &RequestMessage,
+    ) -> io::Result<()> {
+        let Some(params_value) = request.params.clone() else {
+            return write_invalid_params(writer, &request.id, "executeCommand requires params");
+        };
+        let params: ExecuteCommandParams = match serde_json::from_value(params_value) {
+            Ok(params) => params,
+            Err(err) => {
+                return write_invalid_params(
+                    writer,
+                    &request.id,
+                    &format!("invalid executeCommand params: {err}"),
+                );
+            }
+        };
+        match params.command.as_str() {
+            COMMAND_EXTRACT_FUNCTION => {
+                let Some(first) = params.arguments.first().cloned() else {
+                    return write_invalid_params(
+                        writer,
+                        &request.id,
+                        "extractFunction requires one argument",
+                    );
+                };
+                let args: ExtractFunctionArgs = match serde_json::from_value(first) {
+                    Ok(args) => args,
+                    Err(err) => {
+                        return write_invalid_params(
+                            writer,
+                            &request.id,
+                            &format!("invalid extractFunction args: {err}"),
+                        );
+                    }
+                };
+                let Some(document) = self.state.get(&args.text_document.uri).cloned() else {
+                    return write_invalid_params(writer, &request.id, "document not open");
+                };
+                let doc = WorkspaceDoc {
+                    uri: document.uri.as_str(),
+                    text: document.text.as_str(),
+                };
+                let outcome = extract_function(&doc, &args);
+                self.write_refactor_outcome(writer, &request.id, outcome)
+            }
+            COMMAND_INLINE => {
+                let Some(first) = params.arguments.first().cloned() else {
+                    return write_invalid_params(
+                        writer,
+                        &request.id,
+                        "inline requires one argument",
+                    );
+                };
+                let args: InlineArgs = match serde_json::from_value(first) {
+                    Ok(args) => args,
+                    Err(err) => {
+                        return write_invalid_params(
+                            writer,
+                            &request.id,
+                            &format!("invalid inline args: {err}"),
+                        );
+                    }
+                };
+                let Some(document) = self.state.get(&args.text_document.uri).cloned() else {
+                    return write_invalid_params(writer, &request.id, "document not open");
+                };
+                let doc = WorkspaceDoc {
+                    uri: document.uri.as_str(),
+                    text: document.text.as_str(),
+                };
+                let outcome = inline(&doc, &args);
+                self.write_refactor_outcome(writer, &request.id, outcome)
+            }
+            other => {
+                let body = error_response(
+                    &request.id,
+                    error_codes::METHOD_NOT_FOUND,
+                    &format!("unknown command: {other}"),
+                )
+                .map_err(io_other)?;
+                write_message(writer, &body)
+            }
+        }
+    }
+
+    fn write_refactor_outcome<W: Write>(
+        &self,
+        writer: &mut W,
+        id: &RequestId,
+        outcome: RefactorOutcome,
+    ) -> io::Result<()> {
+        match outcome {
+            RefactorOutcome::Edits(edit) => write_typed_response(writer, id, &edit),
+            RefactorOutcome::Rejected(reason) => write_invalid_params(writer, id, &reason),
+        }
     }
 
     // ---------- notification handlers ----------

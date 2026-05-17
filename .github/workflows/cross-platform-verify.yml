@@ -1,0 +1,201 @@
+name: cross-platform-verify
+
+# Cross-platform smoke + bench verification.
+#
+# Goal: prove the Orison toolchain (cargo build, cargo test, validate_all,
+# `ori doctor`, and `ori bench`) behaves identically on every supported
+# host triple, and surface per-OS bench artefacts so we can spot
+# platform-specific regressions early.
+#
+# This workflow is intentionally additive: it does NOT replace the linux-only
+# `ci.yml` quality-gate or the `bench-regression.yml` p50 drift check. It runs
+# on every PR and every push to main.
+#
+# Hard constraints (see CLAUDE/agent brief):
+#   * Bootstrap dep policy is enforced by `validate_all.py --full` (only
+#     serde + serde_json are allowed in Rust code).
+#   * Determinism: per-OS bench artefacts are uploaded so that diffs are
+#     reproducible across runs.
+#   * Schemas are immutable; we just consume `ori.benchmark.v1` output.
+#
+# Security note: this workflow never interpolates user-controlled event
+# payload strings (e.g. PR titles, commit messages) into shell `run:` blocks.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  verify:
+    name: verify (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-13, macos-14, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-xverify-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', 'rust-toolchain.toml') }}
+          restore-keys: |
+            cargo-xverify-${{ runner.os }}-
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install Python deps (jsonschema for validate_all)
+        run: python -m pip install --upgrade pip jsonschema
+
+      - name: cargo build --release -p ori
+        run: cargo build --release -p ori
+
+      - name: cargo test --workspace
+        run: cargo test --workspace
+
+      - name: validate_all (full quality gate)
+        run: python3 scripts/validate_all.py --full
+
+      - name: ori doctor (must exit 0)
+        env:
+          MATRIX_OS: ${{ matrix.os }}
+        shell: bash
+        run: |
+          set +e
+          cargo run --release -p ori --quiet -- doctor
+          rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::ori doctor exited with $rc on $MATRIX_OS"
+            exit "$rc"
+          fi
+
+      - name: ori bench --json (per-OS sample)
+        shell: bash
+        run: |
+          # Re-emit the canonical bench artefact for this host so downstream
+          # jobs can diff per-platform.
+          target/release/ori bench --samples 30 --json > BENCHMARKS.results.json
+
+      - name: Upload per-OS bench artefact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-${{ matrix.os }}
+          path: BENCHMARKS.results.json
+          if-no-files-found: error
+          retention-days: 30
+
+  cross-platform-compare:
+    name: cross-platform compare (linux baseline vs macos-14)
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Download ubuntu-latest bench artefact
+        uses: actions/download-artifact@v4
+        with:
+          name: bench-ubuntu-latest
+          path: artefacts/ubuntu-latest
+
+      - name: Download macos-13 bench artefact
+        uses: actions/download-artifact@v4
+        with:
+          name: bench-macos-13
+          path: artefacts/macos-13
+
+      - name: Download macos-14 bench artefact
+        uses: actions/download-artifact@v4
+        with:
+          name: bench-macos-14
+          path: artefacts/macos-14
+
+      - name: Download windows-latest bench artefact
+        uses: actions/download-artifact@v4
+        with:
+          name: bench-windows-latest
+          path: artefacts/windows-latest
+
+      - name: Re-stage as bench-<os>.json
+        shell: bash
+        run: |
+          # The agent brief specifies the comparison reads
+          # `bench-ubuntu-latest.json` and `bench-macos-14.json`. The actions
+          # download tool gives us directories; restage their payloads.
+          cp artefacts/ubuntu-latest/BENCHMARKS.results.json bench-ubuntu-latest.json
+          cp artefacts/macos-13/BENCHMARKS.results.json     bench-macos-13.json
+          cp artefacts/macos-14/BENCHMARKS.results.json     bench-macos-14.json
+          cp artefacts/windows-latest/BENCHMARKS.results.json bench-windows-latest.json
+
+      - name: Compare ubuntu-latest (baseline) vs macos-14
+        shell: bash
+        run: |
+          # We surface cross-platform drift but do not gate merges on it; the
+          # `bench-regression.yml` workflow is the authoritative gate.
+          set +e
+          python3 scripts/compare_bench.py \
+            --baseline bench-ubuntu-latest.json \
+            --current  bench-macos-14.json \
+            --threshold 100 \
+            --markdown cross-platform-report.md
+          rc=$?
+          echo "compare_bench exit: $rc"
+
+      - name: Post comparison table to workflow summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Cross-platform bench comparison"
+            echo ""
+            echo "_Baseline_: \`bench-ubuntu-latest.json\`  "
+            echo "_Current_: \`bench-macos-14.json\`"
+            echo ""
+            if [ -f cross-platform-report.md ]; then
+              cat cross-platform-report.md
+            else
+              echo "_No comparison report was produced._"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload cross-platform comparison report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cross-platform-report
+          path: |
+            cross-platform-report.md
+            bench-ubuntu-latest.json
+            bench-macos-13.json
+            bench-macos-14.json
+            bench-windows-latest.json
+          if-no-files-found: warn
+          retention-days: 30

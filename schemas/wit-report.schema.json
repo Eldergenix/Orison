@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ori.wit_report.v1",
+  "title": "Orison WIT Report v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "package",
+    "world",
+    "source",
+    "stats"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.wit_report.v1"
+    },
+    "package": {
+      "type": "string",
+      "minLength": 3,
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*:[a-z0-9]+(-[a-z0-9]+)*$"
+    },
+    "world": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1
+    },
+    "stats": {
+      "type": "object",
+      "required": [
+        "interfaces",
+        "funcs",
+        "records",
+        "variants"
+      ],
+      "properties": {
+        "interfaces": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "funcs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "records": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "variants": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.wit_report.v1",
+      "package": "acme:demo",
+      "world": "demo",
+      "source": "package acme:demo@0.1.0;\n\nworld demo {\n    export ping: func() -> string;\n}\n",
+      "stats": {
+        "interfaces": 0,
+        "funcs": 1,
+        "records": 0,
+        "variants": 0
+      }
+    }
+  ]
+}

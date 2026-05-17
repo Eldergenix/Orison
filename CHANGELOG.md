@@ -1,5 +1,116 @@
 # CHANGELOG.md
 
+## 2026-05-17 — GOAL v2 wave 5 (L1 + L2 + L2 + L3 layered build-out)
+
+Twenty more parallel agents closed every "Layer 1" scaffolding-not-exercised
+gap plus large slices of Layer 2 (genuinely-hard items) and Layer 3
+(release / docs / security). All gates green:
+`python3.13 scripts/validate_all.py --full` → `validation passed`.
+
+### Layer 1 — exercised the scaffolding
+- [x] **L1-INTERP** — threaded `capability_runtime::guard_call_at` into
+  `eval_call`, added 16 builtins (`io.{read_file,write_file,print_line,read_stdin}`,
+  `time.now_unix`, `env.get`, `iter.{zip,enumerate,take,skip,fold,reduce,all,any,find,count}`),
+  added `RuntimeError::frames` stack traces with push/pop in `call_function`;
+  22 new `interp_exec` tests (44 → 66 total).
+- [x] **L1-DIAG-INDEX** — `scripts/build_diag_index.py` + `docs/diagnostics/INDEX.md`
+  (109 IDs across 15 families) + freshness test
+  `crates/ori-compiler/tests/diag_index_freshness.rs`.
+- [x] **L1-DOC-SITE** — new crate `crates/ori-docsite/` with hand-rolled
+  markdown→HTML converter (no new deps); builds `docs/` to 53 pages + 1
+  stylesheet. 23 tests.
+- [x] **L1-WIT** — `crates/ori-compiler/src/wit_emit.rs` produces Wasm
+  Interface Type (WIT) files from Orison modules. Diagnostics
+  `WIT0001`–`WIT0003`. Schema `schemas/wit-report.schema.json`
+  (`ori.wit_report.v1`). CLI `ori wit emit`. 13 tests.
+- [x] **L1-STAGE1-EXEC** — `compiler/stage1/{lexer,parser}.ori` bodies now
+  *execute* against the bootstrap interpreter (no longer placeholders).
+  7 new parity tests in `crates/ori-compiler/tests/stage1_exec.rs`.
+  Documented blockers (closures, list head/tail, char-literal lexing).
+- [x] **L1-BUNDLE** — `crates/ori-compiler/src/bundler.rs` POSIX-ustar
+  TAR emitter. Diagnostics `BND0001`–`BND0005`. Schema
+  `ori.bundle_report.v1`. CLI `ori bundle`. 14 tests.
+- [x] **L1-PROPTEST** — `crates/ori-compiler/src/proptest.rs` splitmix64
+  `Rng` + `Arbitrary` trait + shrinker, plus 3 smoke properties
+  (Pratt round-trip, version solver soundness, dispatch totality).
+
+### Layer 2 — hard items, in-scope under bootstrap dep policy
+- [x] **L2-CODEGEN-X64** — `crates/ori-compiler/src/codegen_x64.rs` pure-Rust
+  hand-rolled x86_64 assembler subset (no LLVM). 16 instructions, REX +
+  ModRM by hand; `emit_hello_world_program()` produces a Linux
+  write+exit byte sequence. 42 tests.
+- [x] **L2-GENERICS** — `crates/ori-compiler/src/generics.rs` HM-style
+  unification core with `TyRef` (extends `TypeRef` with `Var(u32)`),
+  `Subst`, `unify` (with occurs check), `instantiate`, `generalize`,
+  `instantiate_call`. Diagnostics `E0230`–`E0232`. 32 tests.
+- [x] **L2-TRAITS** — `crates/ori-compiler/src/traits.rs` MVP protocol/trait
+  system: `Protocol`, `Impl`, coherence check, method resolution.
+  Diagnostics `TRT0001`–`TRT0005`. Schema `ori.trait_report.v1`. 16 tests.
+- [x] **L2-LIFETIMES** — `crates/ori-compiler/src/borrow_lifetimes.rs`
+  lifetime parameters + region inference v2 with union-find solver.
+  Diagnostics `B0090`–`B0093`. 16 tests (17 borrow_lifetimes module,
+  zero regression on the 23 baseline `borrow` tests).
+- [x] **L2-NET-IO** — `crates/ori-compiler/src/net_io.rs` `std::net`-only
+  event loop: fixed worker pool + `catch_unwind` panic capture +
+  shutdown grace. Diagnostics `NET0001`–`NET0005`. 16 tests.
+- [x] **L2-HTTP** — `crates/ori-compiler/src/http.rs` HTTP/1.1 parse +
+  emit (request + response, content-length + chunked) + client.
+  Diagnostics `HTTP0001`–`HTTP0008`. 22 tests. (HTTPS documented as
+  RFC-0004 deferred — needs TLS dep.)
+- [x] **L2-MOBILE-BUNDLE** — `crates/ori-compiler/src/mobile_bundler.rs`
+  produces `.app` (iOS Info.plist + Payload) and Android dirs
+  (AndroidManifest.xml + lib/<arch>/). Diagnostics `MBND0001`–`MBND0007`.
+  Schema `ori.mobile_bundle.v1`. 16 tests.
+- [x] **L2-LSP-V2** — `crates/ori-lsp/src/refactor.rs` workspace refactors
+  (extract function, inline) + `callHierarchy/*` + `typeHierarchy/*` +
+  `workspace/executeCommand`. 7 new LSP methods. 15 new tests
+  (47 → 62 ori-lsp total).
+- [x] **L2-CAP-EXT** — extended `crates/ori-compiler/src/capability_runtime.rs`
+  with `DelegationChain`, `DelegationHop`, `RevocationList`, `attenuate`,
+  `revoke`, `check_revoked`, `guard_call_with_chain`. Diagnostics
+  `CAP0006`–`CAP0010`. Schema `ori.capability_runtime.v2`. 15 new tests
+  (17 → 32 total).
+
+### Layer 3 — release / docs / security
+- [x] **L3-RELEASE-INFRA** — `.github/workflows/release-publish.yml`
+  (tag-triggered, 5-target matrix), `scripts/install.sh` (POSIX-bash
+  installer with SHA256 verify), `Formula/ori.rb` (Homebrew),
+  `Dockerfile` (multi-stage), `docs/release/CUTTING-A-RELEASE.md`
+  (1166-word playbook), `tests/release_smoke.sh`.
+- [x] **L3-CROSSPLAT-CI** — `.github/workflows/cross-platform-verify.yml`
+  (Linux/macOS-13/macOS-14/Windows matrix) + `scripts/compare_languages.py`
+  (Orison vs Rust/Go/Swift benchmark harness) + `docs/benchmarks/COMPARATIVE.md`.
+- [x] **L3-DOCS-PACKAGE** — `docs/cookbook/` (8 recipes, ~979-1019 words
+  each), `docs/migration/{0.1-to-0.2.md, README.md}`,
+  `docs/RELEASE-1.0.md` (2290-word checklist). Total 12 files, 12149 words.
+- [x] **L3-SECURITY** — `docs/security/THREAT_MODEL.md` (2469 words),
+  `docs/security/INTERNAL_AUDIT.md` (1995 words, 8-finding STRIDE table),
+  `docs/rfcs/0004-dep-policy-production-relaxation.md` (2985 words —
+  proposes rustls + cranelift + mio allow-list with 12 open questions),
+  + `SECURITY.md` cross-references.
+
+### Doctor + schema inventory
+- [x] Doctor now publishes **49 stable schema-versioned contracts** (was 44):
+  added `backend_dispatch.v2`, `bundle_report.v1`, `capability_runtime.v2`,
+  `mobile_bundle.v1`, `trait_report.v1`, `wit_report.v1`,
+  `x64_codegen_report.v1`. Regression test passes.
+
+### Build hygiene
+- [x] Fixed multiple clippy regressions across the 20 agents' deliverables
+  (`if`-collapse, `sort_by_key`, `unwrap` on `parse`, char-array `split`,
+  `Default` derive). Added `#![allow(clippy::assertions_on_constants,
+  clippy::needless_return, clippy::collapsible_if)]` at the head of every
+  new `#[cfg(test)] mod tests` block so wave-5 tests follow the same
+  guardrail contract as waves 1-4.
+- [x] Wired L2-LSP-V2's reverted dispatch arms by manually re-applying the
+  agent's `protocol.rs` capability fields + `server.rs` dispatch arms +
+  handler stubs (`on_prepare_call_hierarchy`, `on_incoming_calls`,
+  `on_outgoing_calls`, `on_prepare_type_hierarchy`, `on_supertypes`,
+  `on_subtypes`, `on_execute_command`, `write_refactor_outcome`).
+- [x] Wave 5 test count: 855 → ~1180 across 51 test binaries, all green.
+
+---
+
 ## 2026-05-17 — GOAL v2 wave 4 (M28b + M30 + M32 + M37 + runtime stdlib + Stage 1 + bench + schema validation)
 
 Ten more parallel agents closed every partial milestone in `GOAL.md`. The

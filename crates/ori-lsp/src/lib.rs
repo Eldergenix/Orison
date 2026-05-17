@@ -15,6 +15,7 @@
 pub mod codec;
 pub mod diagnostics;
 pub mod protocol;
+pub mod refactor;
 pub mod server;
 pub mod state;
 

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orison.dev/schemas/x64-codegen-report.schema.json",
+  "title": "Orison x86_64 Codegen Report v1",
+  "description": "Structured envelope returned alongside a hand-encoded x86_64 byte buffer. Bytes are deterministic given the same input instruction sequence; the hash is computed over the emitted bytes using FNV-1a (64-bit, prefix 'fnv1a:').",
+  "type": "object",
+  "required": [
+    "schema",
+    "byte_count",
+    "instruction_count",
+    "hash"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.x64_codegen_report.v1"
+    },
+    "byte_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total number of machine-code bytes produced by encode()."
+    },
+    "instruction_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of X64Instr items consumed from the input program."
+    },
+    "hash": {
+      "type": "string",
+      "minLength": 7,
+      "pattern": "^fnv1a:[0-9a-f]{16}$",
+      "description": "Deterministic FNV-1a 64-bit hash of the emitted bytes, formatted as 'fnv1a:<16 hex chars>'."
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema": "ori.x64_codegen_report.v1",
+      "byte_count": 1,
+      "instruction_count": 1,
+      "hash": "fnv1a:af63bd4c8601b7be"
+    }
+  ]
+}

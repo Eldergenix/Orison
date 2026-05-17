@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ori.trait_report.v1",
+  "title": "Orison Trait/Protocol Coherence Report v1",
+  "description": "Deterministic snapshot of the protocols, impls, and coherence conflicts produced by ori_compiler::traits::check_coherence. One report per checked module/crate. Surfaced via `ori check --with-traits` and `ori_compiler::traits::report_json`.",
+  "type": "object",
+  "required": [
+    "schema",
+    "protocols",
+    "impls",
+    "conflicts"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ori.trait_report.v1"
+    },
+    "protocols": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/protocol"
+      }
+    },
+    "impls": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/impl"
+      }
+    },
+    "conflicts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/conflict"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "protocol": {
+      "type": "object",
+      "required": [
+        "name",
+        "type_params",
+        "methods"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type_params": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "methods": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/protocol_method"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "protocol_method": {
+      "type": "object",
+      "required": [
+        "name",
+        "signature"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "impl": {
+      "type": "object",
+      "required": [
+        "protocol",
+        "for_type",
+        "methods"
+      ],
+      "properties": {
+        "protocol": {
+          "type": "string",
+          "minLength": 1
+        },
+        "for_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "methods": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "conflict": {
+      "type": "object",
+      "required": [
+        "protocol",
+        "for_type",
+        "impl_a",
+        "impl_b"
+      ],
+      "properties": {
+        "protocol": {
+          "type": "string",
+          "minLength": 1
+        },
+        "for_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "impl_a": {
+          "type": "string",
+          "minLength": 1
+        },
+        "impl_b": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
